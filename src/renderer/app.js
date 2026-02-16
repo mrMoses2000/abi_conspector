@@ -470,7 +470,7 @@ writebackNotionBtn.addEventListener('click', () => {
     }
 
     const pageTitle = window.prompt(
-      'Введите точное название страницы Notion (оставьте пустым для значения из .env):',
+      'Введите точное название страницы/подстраницы Notion (если пусто, возьмём значение из .env):',
       ''
     );
 

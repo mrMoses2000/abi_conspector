@@ -134,8 +134,14 @@ if (notionMode === 'real') {
     pass('NOTION_TOKEN is set');
   }
 
-  if (!process.env.CONSPECTOR_NOTION_PAGE_ID && !process.env.CONSPECTOR_NOTION_PAGE_TITLE) {
-    markIssue('Set CONSPECTOR_NOTION_PAGE_ID or CONSPECTOR_NOTION_PAGE_TITLE for Notion writeback');
+  if (
+    !process.env.CONSPECTOR_NOTION_PAGE_ID &&
+    !process.env.CONSPECTOR_NOTION_PAGE_TITLE &&
+    !process.env.CONSPECTOR_NOTION_ROOT_PAGE_ID
+  ) {
+    markIssue(
+      'Set CONSPECTOR_NOTION_PAGE_ID or CONSPECTOR_NOTION_PAGE_TITLE (or CONSPECTOR_NOTION_ROOT_PAGE_ID for nested lookup) for Notion writeback'
+    );
   } else {
     pass('Notion page target is configured');
   }

@@ -78,6 +78,7 @@ For project-level Codex behavior, keep `AGENTS.md` and `.agents/skills/*/SKILL.m
 - `NOTION_TOKEN=...`
 - `CONSPECTOR_NOTION_PAGE_ID=<page-id>` or
 - `CONSPECTOR_NOTION_PAGE_TITLE=<exact-unique-title>`
+- `CONSPECTOR_NOTION_ROOT_PAGE_ID=<root-page-id-for-nested-subpages>` (optional)
 - `CONSPECTOR_NOTION_SOFT_FAIL=true|false` (default: `true`)
 
 Notion setup checklist:
@@ -91,6 +92,7 @@ Notion setup checklist:
 4. Set one target selector:
    - `CONSPECTOR_NOTION_PAGE_ID` (recommended), or
    - `CONSPECTOR_NOTION_PAGE_TITLE` (exact unique title).
+5. For subject subpages under a parent page, set `CONSPECTOR_NOTION_ROOT_PAGE_ID=<АБИ page id>` and pass subpage title in UI prompt (`Комбинировать с Notion`).
 
 `CONSPECTOR_NOTION_PAGE_ID` can be taken from page URL as the trailing 32-char id (with or without dashes).
 

@@ -5,6 +5,7 @@ import { APIErrorCode, isNotionClientError } from '@notionhq/client';
 import { ControlledError } from '../utils/errors.js';
 
 const APPEND_CHUNK_SIZE = 50;
+const MAX_NESTED_PAGES_SCAN = 400;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -58,23 +59,188 @@ async function listAllChildren(client, pageId) {
   return blocks;
 }
 
+function normalizeTitle(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function uniqueStrings(values) {
+  const out = [];
+  const seen = new Set();
+  for (const value of values) {
+    const key = String(value || '').trim();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+function recordingNameCandidates(recording) {
+  const fileName = String(recording?.original_file_name || '').trim();
+  if (!fileName) {
+    return [];
+  }
+
+  const withoutExt = fileName.replace(/\.[^./\\]+$/, '');
+  const softened = withoutExt.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  return uniqueStrings([withoutExt, softened]);
+}
+
+/**
+ * @param {Array<{id: string; title: string}>} pages
+ * @param {string[]} candidates
+ */
+export function choosePageByTitle(pages, candidates) {
+  if (!Array.isArray(pages) || pages.length === 0) {
+    return null;
+  }
+
+  const targetCandidates = uniqueStrings(candidates)
+    .map((title) => ({
+      raw: title,
+      normalized: normalizeTitle(title)
+    }))
+    .filter((item) => item.normalized);
+
+  if (targetCandidates.length === 0) {
+    return null;
+  }
+
+  const normalizedPages = pages
+    .map((page) => ({
+      ...page,
+      normalized: normalizeTitle(page.title)
+    }))
+    .filter((page) => page.normalized);
+
+  for (const candidate of targetCandidates) {
+    const exact = normalizedPages.find((page) => page.normalized === candidate.normalized);
+    if (exact) {
+      return { id: exact.id, title: exact.title, matchedBy: candidate.raw, strategy: 'exact' };
+    }
+  }
+
+  const containsMatches = [];
+  for (const candidate of targetCandidates) {
+    for (const page of normalizedPages) {
+      if (page.normalized.includes(candidate.normalized) || candidate.normalized.includes(page.normalized)) {
+        containsMatches.push({ page, candidate: candidate.raw });
+      }
+    }
+  }
+
+  const uniqueById = new Map();
+  for (const match of containsMatches) {
+    if (!uniqueById.has(match.page.id)) {
+      uniqueById.set(match.page.id, match);
+    }
+  }
+
+  if (uniqueById.size === 1) {
+    const only = [...uniqueById.values()][0];
+    return { id: only.page.id, title: only.page.title, matchedBy: only.candidate, strategy: 'contains' };
+  }
+
+  return null;
+}
+
+/**
+ * Scans nested child pages under root page.
+ * @param {Client} client
+ * @param {string} rootPageId
+ */
+async function listNestedPages(client, rootPageId) {
+  const queue = [rootPageId];
+  const visited = new Set();
+  const pages = [];
+
+  while (queue.length > 0 && pages.length < MAX_NESTED_PAGES_SCAN) {
+    const parentId = queue.shift();
+    if (!parentId || visited.has(parentId)) {
+      continue;
+    }
+    visited.add(parentId);
+
+    const children = await listAllChildren(client, parentId);
+    for (const block of children) {
+      if (block.type !== 'child_page') {
+        continue;
+      }
+      const pageId = block.id;
+      const title = block.child_page?.title || '';
+      if (!pageId || !title) {
+        continue;
+      }
+      pages.push({ id: pageId, title });
+      queue.push(pageId);
+      if (pages.length >= MAX_NESTED_PAGES_SCAN) {
+        break;
+      }
+    }
+  }
+
+  return pages;
+}
+
 /**
  * @param {Client} client
  * @param {string} pageId
  * @param {string} title
+ * @param {string} rootPageId
+ * @param {any} recording
  */
-async function resolvePageId(client, pageId, title) {
-  if (pageId) {
-    return pageId;
+async function resolvePageId(client, pageId, title, rootPageId, recording) {
+  const normalizedTitle = String(title || '').trim();
+  const normalizedPageId = String(pageId || '').trim();
+  const normalizedRootPageId = String(rootPageId || '').trim();
+
+  const scopedRootId = normalizedRootPageId || (normalizedTitle ? normalizedPageId : '');
+  if (normalizedTitle && scopedRootId) {
+    const nestedPages = await listNestedPages(client, scopedRootId);
+    const match = choosePageByTitle(nestedPages, [normalizedTitle]);
+    if (match) {
+      return match.id;
+    }
+
+    const preview = nestedPages
+      .slice(0, 12)
+      .map((page) => page.title)
+      .join(', ');
+    throw new ControlledError(
+      'NOTION_PAGE_NOT_FOUND_IN_ROOT',
+      `Page "${normalizedTitle}" not found under configured root page. Available: ${preview || 'none'}`
+    );
   }
 
-  if (!title) {
-    throw new ControlledError('NOTION_TARGET_MISSING', 'Set CONSPECTOR_NOTION_PAGE_ID or CONSPECTOR_NOTION_PAGE_TITLE');
+  if (normalizedPageId) {
+    return normalizedPageId;
+  }
+
+  if (!normalizedTitle && normalizedRootPageId) {
+    const nestedPages = await listNestedPages(client, normalizedRootPageId);
+    const match = choosePageByTitle(nestedPages, recordingNameCandidates(recording));
+    if (match) {
+      return match.id;
+    }
+  }
+
+  if (!normalizedTitle) {
+    throw new ControlledError(
+      'NOTION_TARGET_MISSING',
+      'Set CONSPECTOR_NOTION_PAGE_ID or CONSPECTOR_NOTION_PAGE_TITLE. For nested pages, set CONSPECTOR_NOTION_ROOT_PAGE_ID and pass page title in UI.'
+    );
   }
 
   const search = await withRetries(() =>
     client.search({
-      query: title,
+      query: normalizedTitle,
       filter: {
         property: 'object',
         value: 'page'
@@ -92,11 +258,11 @@ async function resolvePageId(client, pageId, title) {
       return false;
     }
     const text = titleProp.title.map((node) => node.plain_text).join('').trim();
-    return text === title;
+    return text === normalizedTitle;
   });
 
   if (!exact || exact.object !== 'page') {
-    throw new ControlledError('NOTION_PAGE_NOT_FOUND', `Notion page not found by title: ${title}`);
+    throw new ControlledError('NOTION_PAGE_NOT_FOUND', `Notion page not found by title: ${normalizedTitle}`);
   }
 
   return exact.id;
@@ -268,6 +434,7 @@ function normalizeNotionCodeLang(lang) {
  *     token: string;
  *     pageId: string;
  *     pageTitle: string;
+ *     rootPageId?: string;
  *   };
  * }} payload
  */
@@ -283,7 +450,13 @@ export async function writeMergedToNotion(payload) {
   }
 
   const client = new Client({ auth: notionConfig.token });
-  const pageId = await resolvePageId(client, notionConfig.pageId, notionConfig.pageTitle);
+  const pageId = await resolvePageId(
+    client,
+    notionConfig.pageId,
+    notionConfig.pageTitle,
+    notionConfig.rootPageId || '',
+    recording
+  );
 
   const oldBlocks = await listAllChildren(client, pageId);
   await fs.mkdir(backupsDir, { recursive: true });
