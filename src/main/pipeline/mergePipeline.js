@@ -231,7 +231,8 @@ export function createMergePipeline(deps) {
             mergedPath,
             recording,
             backupsDir: managedPaths.backups,
-            notionConfig: runtimeConfig.notion
+            notionConfig: runtimeConfig.notion,
+            codexConfig: runtimeConfig.codex
           });
 
           if (result?.warning) {

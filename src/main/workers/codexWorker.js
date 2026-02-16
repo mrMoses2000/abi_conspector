@@ -98,6 +98,30 @@ async function runCodex(config, outputPath, prompt) {
 
 /**
  * @param {{
+ *   structuredMarkdown: string;
+ *   baseMarkdown: string;
+ *   outputPath: string;
+ *   recording: any;
+ *   codexConfig: {
+ *     mode: 'real' | 'mock';
+ *     fullAuto?: boolean;
+ *     model: string;
+ *     reasoningEffort?: string;
+ *     timeoutMs: number;
+ *     workdir: string;
+ *     sourceNotePath: string;
+ *   };
+ * }} payload
+ */
+export async function runCodexMergeFromMarkdown(payload) {
+  const { structuredMarkdown, baseMarkdown, outputPath, recording, codexConfig } = payload;
+  const prompt = `Ты редактор учебного материала.\n\nЗадача: сделать полную merged-версию конспекта в markdown на русском языке.\n\nТребования:\n- Верни только markdown.\n- Если базовый конспект пустой, используй структурированный материал как основу.\n- Если базовый конспект есть, аккуратно объединяй и улучшай структуру.\n- Сохрани совместимость с импортом в Notion (обычные заголовки/списки/таблицы/цитаты).\n- Добавь раздел \"Схема\" с mermaid-блоком.\n\nКонтекст:\n- recording_id: ${recording.id}\n- source_file: ${recording.original_file_name ?? recording.id}\n\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\``;
+
+  await runCodex(codexConfig, outputPath, prompt);
+}
+
+/**
+ * @param {{
  *   transcriptPath: string;
  *   structuredPath: string;
  *   recording: any;
@@ -147,7 +171,11 @@ export async function runCodexMerge(payload) {
     sourceMd = await fs.readFile(sourcePath, 'utf8').catch(() => '');
   }
 
-  const prompt = `Ты редактор учебного материала.\n\nЗадача: сделать полную merged-версию конспекта в markdown на русском языке.\n\nТребования:\n- Верни только markdown.\n- Если базовый конспект пустой, используй структурированный материал как основу.\n- Если базовый конспект есть, аккуратно объединяй и улучшай структуру.\n- Сохрани совместимость с импортом в Notion (обычные заголовки/списки/таблицы/цитаты).\n- Добавь раздел \"Схема\" с mermaid-блоком.\n\nКонтекст:\n- recording_id: ${recording.id}\n- source_file: ${recording.original_file_name ?? recording.id}\n\nStructured markdown:\n\n\`\`\`md\n${structuredMd}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${sourceMd || '# (пусто)'}\n\`\`\``;
-
-  await runCodex(codexConfig, mergedPath, prompt);
+  await runCodexMergeFromMarkdown({
+    structuredMarkdown: structuredMd,
+    baseMarkdown: sourceMd,
+    outputPath: mergedPath,
+    recording,
+    codexConfig
+  });
 }

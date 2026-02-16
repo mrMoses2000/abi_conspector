@@ -84,7 +84,8 @@ export function getRuntimeConfig() {
       token: process.env.NOTION_TOKEN || '',
       pageId: process.env.CONSPECTOR_NOTION_PAGE_ID || '',
       pageTitle: process.env.CONSPECTOR_NOTION_PAGE_TITLE || '',
-      rootPageId: process.env.CONSPECTOR_NOTION_ROOT_PAGE_ID || ''
+      rootPageId: process.env.CONSPECTOR_NOTION_ROOT_PAGE_ID || '',
+      mergeWithExisting: parseBoolean(process.env.CONSPECTOR_NOTION_MERGE_WITH_EXISTING, true)
     },
     resilience: {
       sttFallbackToMock: parseBoolean(process.env.CONSPECTOR_STT_FALLBACK_TO_MOCK, true),

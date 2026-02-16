@@ -182,13 +182,14 @@ if (gotSingleInstanceLock) {
         pageTitle: typeof pageTitle === 'string' && pageTitle.trim() ? pageTitle.trim() : config.notion.pageTitle
       };
 
-      return writeMergedToNotion({
-        mergedPath,
-        recording,
-        backupsDir: managedPaths.backups,
-        notionConfig
-      });
-    };
+    return writeMergedToNotion({
+      mergedPath,
+      recording,
+      backupsDir: managedPaths.backups,
+      notionConfig,
+      codexConfig: config.codex
+    });
+  };
 
     const cleanupFailedJobs = async () => {
       const result = db.cleanupFailedJobs();

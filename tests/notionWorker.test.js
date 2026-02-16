@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { choosePageByTitle, markdownToNotionBlocks } from '../src/main/workers/notionWorker.js';
+import {
+  choosePageByTitle,
+  markdownToNotionBlocks,
+  notionBlocksToMarkdown
+} from '../src/main/workers/notionWorker.js';
 
 test('markdownToNotionBlocks converts common markdown structures', () => {
   const md = [
@@ -56,4 +60,30 @@ test('choosePageByTitle resolves unique contains match', () => {
   assert.ok(match);
   assert.equal(match.id, 'p1');
   assert.equal(match.strategy, 'contains');
+});
+
+test('notionBlocksToMarkdown converts common blocks back to markdown', () => {
+  const md = notionBlocksToMarkdown([
+    {
+      type: 'heading_1',
+      heading_1: { rich_text: [{ plain_text: 'Заголовок' }] }
+    },
+    {
+      type: 'paragraph',
+      paragraph: { rich_text: [{ plain_text: 'Текст параграфа' }] }
+    },
+    {
+      type: 'bulleted_list_item',
+      bulleted_list_item: { rich_text: [{ plain_text: 'Пункт' }] }
+    },
+    {
+      type: 'code',
+      code: { language: 'mermaid', rich_text: [{ plain_text: 'graph TD\nA-->B' }] }
+    }
+  ]);
+
+  assert.match(md, /^# Заголовок/m);
+  assert.match(md, /Текст параграфа/);
+  assert.match(md, /^- Пункт/m);
+  assert.match(md, /```mermaid/);
 });

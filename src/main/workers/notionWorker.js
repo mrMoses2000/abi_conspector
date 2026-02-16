@@ -3,6 +3,7 @@ import path from 'node:path';
 import { Client } from '@notionhq/client';
 import { APIErrorCode, isNotionClientError } from '@notionhq/client';
 import { ControlledError } from '../utils/errors.js';
+import { runCodexMergeFromMarkdown } from './codexWorker.js';
 
 const APPEND_CHUNK_SIZE = 50;
 const MAX_NESTED_PAGES_SCAN = 400;
@@ -273,6 +274,90 @@ function textRich(text) {
   return [{ type: 'text', text: { content: normalized.slice(0, 1900) } }];
 }
 
+function plainTextFromRichText(richTextArray) {
+  if (!Array.isArray(richTextArray) || richTextArray.length === 0) {
+    return '';
+  }
+  return richTextArray
+    .map((item) => String(item?.plain_text ?? item?.text?.content ?? ''))
+    .join('')
+    .trim();
+}
+
+/**
+ * Converts top-level Notion blocks to markdown lines (best-effort).
+ * @param {Array<any>} blocks
+ */
+export function notionBlocksToMarkdown(blocks) {
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    return '';
+  }
+
+  const lines = [];
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') {
+      continue;
+    }
+
+    if (block.type === 'heading_1') {
+      lines.push(`# ${plainTextFromRichText(block.heading_1?.rich_text || [])}`);
+      lines.push('');
+      continue;
+    }
+
+    if (block.type === 'heading_2') {
+      lines.push(`## ${plainTextFromRichText(block.heading_2?.rich_text || [])}`);
+      lines.push('');
+      continue;
+    }
+
+    if (block.type === 'heading_3') {
+      lines.push(`### ${plainTextFromRichText(block.heading_3?.rich_text || [])}`);
+      lines.push('');
+      continue;
+    }
+
+    if (block.type === 'paragraph') {
+      lines.push(plainTextFromRichText(block.paragraph?.rich_text || []));
+      lines.push('');
+      continue;
+    }
+
+    if (block.type === 'bulleted_list_item') {
+      lines.push(`- ${plainTextFromRichText(block.bulleted_list_item?.rich_text || [])}`);
+      continue;
+    }
+
+    if (block.type === 'numbered_list_item') {
+      lines.push(`1. ${plainTextFromRichText(block.numbered_list_item?.rich_text || [])}`);
+      continue;
+    }
+
+    if (block.type === 'quote') {
+      lines.push(`> ${plainTextFromRichText(block.quote?.rich_text || [])}`);
+      lines.push('');
+      continue;
+    }
+
+    if (block.type === 'code') {
+      const lang = String(block.code?.language || '').trim();
+      const code = plainTextFromRichText(block.code?.rich_text || []);
+      lines.push(`\`\`\`${lang}`);
+      lines.push(code);
+      lines.push('```');
+      lines.push('');
+      continue;
+    }
+
+    if (block.type === 'divider') {
+      lines.push('---');
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n').trim();
+}
+
 /**
  * Very simple markdown -> Notion blocks mapper.
  * Supports headings, bullet/numbered lists, quote, code fences, paragraph.
@@ -435,11 +520,21 @@ function normalizeNotionCodeLang(lang) {
  *     pageId: string;
  *     pageTitle: string;
  *     rootPageId?: string;
+ *     mergeWithExisting?: boolean;
+ *   };
+ *   codexConfig?: {
+ *     mode: 'real' | 'mock';
+ *     fullAuto?: boolean;
+ *     model: string;
+ *     reasoningEffort?: string;
+ *     timeoutMs: number;
+ *     workdir: string;
+ *     sourceNotePath: string;
  *   };
  * }} payload
  */
 export async function writeMergedToNotion(payload) {
-  const { mergedPath, recording, backupsDir, notionConfig } = payload;
+  const { mergedPath, recording, backupsDir, notionConfig, codexConfig } = payload;
 
   if (notionConfig.mode !== 'real') {
     return { status: 'skipped', warning: 'Notion writeback is disabled (CONSPECTOR_NOTION_MODE=off).' };
@@ -459,6 +554,7 @@ export async function writeMergedToNotion(payload) {
   );
 
   const oldBlocks = await listAllChildren(client, pageId);
+  const oldMarkdown = notionBlocksToMarkdown(oldBlocks);
   await fs.mkdir(backupsDir, { recursive: true });
 
   const backupPath = path.join(backupsDir, `${recording.id}_notion_backup.json`);
@@ -477,12 +573,32 @@ export async function writeMergedToNotion(payload) {
     'utf8'
   );
 
+  let finalMarkdown = await fs.readFile(mergedPath, 'utf8');
+  let warning = '';
+
+  if (notionConfig.mergeWithExisting && oldMarkdown.trim() && codexConfig) {
+    const mergedFromNotionPath = path.join(backupsDir, `${recording.id}_merged_with_notion.md`);
+    try {
+      await runCodexMergeFromMarkdown({
+        structuredMarkdown: finalMarkdown,
+        baseMarkdown: oldMarkdown,
+        outputPath: mergedFromNotionPath,
+        recording,
+        codexConfig
+      });
+      finalMarkdown = await fs.readFile(mergedFromNotionPath, 'utf8');
+    } catch (error) {
+      warning = `Notion merge-with-existing skipped: ${error instanceof Error ? error.message : 'unknown error'}`;
+    }
+  } else if (notionConfig.mergeWithExisting && oldMarkdown.trim() && !codexConfig) {
+    warning = 'Notion merge-with-existing requested but codex config is missing.';
+  }
+
   for (const block of oldBlocks) {
     await withRetries(() => client.blocks.delete({ block_id: block.id }));
   }
 
-  const mergedMd = await fs.readFile(mergedPath, 'utf8');
-  const blocks = markdownToNotionBlocks(mergedMd);
+  const blocks = markdownToNotionBlocks(finalMarkdown);
 
   if (blocks.length === 0) {
     throw new ControlledError('NOTION_EMPTY_MERGE', 'Merged markdown could not be converted to Notion blocks');
@@ -497,6 +613,7 @@ export async function writeMergedToNotion(payload) {
     status: 'written',
     pageId,
     backupPath,
-    blocksWritten: blocks.length
+    blocksWritten: blocks.length,
+    warning: warning || undefined
   };
 }
