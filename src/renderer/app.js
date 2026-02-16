@@ -226,11 +226,23 @@ function setProgressForSelectedJob() {
     suffix = ` | в очереди ${formatElapsed(selected.created_at)}`;
   } else if (selected.status === 'running') {
     if (liveProgress && Number.isFinite(liveProgress.percent)) {
-      percent = Math.max(estimateRunningPercent(selected), liveProgress.percent);
+      let displayPercent = liveProgress.percent;
+      const signalAgeSec = Math.max(
+        0,
+        Math.floor((Date.now() - Number(liveProgress.updatedAtMs || Date.now())) / 1000)
+      );
+      if (signalAgeSec > 30) {
+        const softCreep = Math.floor((signalAgeSec - 30) / 45);
+        const upper = selected.stage === 'stt_diarization' ? 51 : 98;
+        displayPercent = Math.min(upper, liveProgress.percent + Math.max(0, softCreep));
+      }
+
+      percent = Math.max(estimateRunningPercent(selected), displayPercent);
       suffix = ` | выполняется ${formatElapsed(selected.updated_at || selected.created_at)}`;
       if (liveProgress.message) {
         suffix += ` | ${liveProgress.message}`;
       }
+      suffix += ` | последний сигнал: ${formatDuration(signalAgeSec)} назад`;
       if (liveProgress.logFile) {
         suffix += ` | лог: ${liveProgress.logFile}`;
       }
@@ -544,7 +556,8 @@ if (!api) {
         liveProgressByJob.set(payload.jobId, {
           percent: payload.progressPercent,
           message: typeof payload.progressMessage === 'string' ? payload.progressMessage : '',
-          logFile
+          logFile,
+          updatedAtMs: Date.now()
         });
       } else if (payload.status === 'done' || payload.status === 'failed') {
         liveProgressByJob.delete(payload.jobId);
