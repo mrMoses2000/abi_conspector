@@ -72,6 +72,16 @@ export class AppDatabase {
       WHERE id = ?
     `);
 
+    this.recoverStaleJobsStmt = this.db.prepare(`
+      UPDATE merge_jobs
+      SET
+        status = 'failed',
+        error_code = 'RECOVERED_STALE_JOB',
+        error_message = ?,
+        updated_at = ?
+      WHERE status IN ('queued', 'running')
+    `);
+
     this.getMergeJobStmt = this.db.prepare(`
       SELECT id, recording_id, stage, status, warning, error_code, error_message, created_at, updated_at
       FROM merge_jobs
@@ -112,6 +122,29 @@ export class AppDatabase {
       INNER JOIN recordings r ON r.id = j.recording_id
       ORDER BY j.created_at DESC
       LIMIT ?
+    `);
+
+    this.listOrphanRecordingsStmt = this.db.prepare(`
+      SELECT
+        r.id,
+        r.managed_audio_path,
+        r.normalized_audio_path
+      FROM recordings r
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM merge_jobs j
+        WHERE j.recording_id = r.id
+      )
+    `);
+
+    this.deleteFailedJobsStmt = this.db.prepare(`
+      DELETE FROM merge_jobs
+      WHERE status = 'failed'
+    `);
+
+    this.deleteRecordingStmt = this.db.prepare(`
+      DELETE FROM recordings
+      WHERE id = ?
     `);
   }
 
@@ -278,6 +311,18 @@ export class AppDatabase {
   }
 
   /**
+   * Marks jobs left in queued/running as failed after app restart.
+   * Returns number of updated rows.
+   */
+  recoverStaleJobs() {
+    const info = this.recoverStaleJobsStmt.run(
+      'Application restarted before completion. Retry the job.',
+      nowIso()
+    );
+    return Number(info?.changes || 0);
+  }
+
+  /**
    * @param {string} jobId
    */
   getMergeJob(jobId) {
@@ -296,5 +341,30 @@ export class AppDatabase {
    */
   listRecentJobs(limit = 30) {
     return this.listRecentJobsStmt.all(limit);
+  }
+
+  /**
+   * Deletes all failed jobs and then removes recordings that no longer have jobs.
+   * Returns deleted counts and orphan recording rows to allow file cleanup.
+   */
+  cleanupFailedJobs() {
+    this.db.exec('BEGIN');
+    try {
+      const deletedJobsInfo = this.deleteFailedJobsStmt.run();
+      const orphanRecordings = this.listOrphanRecordingsStmt.all();
+
+      for (const row of orphanRecordings) {
+        this.deleteRecordingStmt.run(row.id);
+      }
+
+      this.db.exec('COMMIT');
+      return {
+        deletedJobs: Number(deletedJobsInfo?.changes || 0),
+        deletedRecordings: orphanRecordings
+      };
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 }

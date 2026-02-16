@@ -11,8 +11,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
+
+
+def report_progress(percent: int, message: str) -> None:
+    sys.stderr.write(f"STT_PROGRESS {percent} {message}\n")
+    sys.stderr.flush()
 
 
 def parse_args() -> argparse.Namespace:
@@ -75,6 +81,7 @@ def main() -> int:
 
     try:
         audio = whisperx.load_audio(str(input_path))
+        report_progress(24, "audio_loaded")
 
         model = whisperx.load_model(
             args.model,
@@ -82,11 +89,14 @@ def main() -> int:
             compute_type=args.compute_type,
             language=args.language,
         )
+        report_progress(30, "model_loaded")
 
         transcript = model.transcribe(audio, batch_size=args.batch_size)
+        report_progress(52, "transcribe_done")
         lang = transcript.get("language") or args.language
 
         align_model, metadata = whisperx.load_align_model(language_code=lang, device=args.device)
+        report_progress(60, "align_model_loaded")
         aligned = whisperx.align(
             transcript["segments"],
             align_model,
@@ -95,17 +105,22 @@ def main() -> int:
             args.device,
             return_char_alignments=False,
         )
+        report_progress(72, "align_done")
 
         diarization_used = False
         result = aligned
 
-        if args.hf_token:
-            diarization = whisperx.DiarizationPipeline(use_auth_token=args.hf_token, device=args.device)
+        hf_token = args.hf_token or os.getenv("HUGGINGFACE_TOKEN", "")
+        if hf_token:
+            diarization = whisperx.DiarizationPipeline(use_auth_token=hf_token, device=args.device)
             diarized = diarization(audio)
             result = whisperx.assign_word_speakers(diarized, aligned)
             diarization_used = True
+            report_progress(88, "diarization_done")
         elif args.require_diarization:
             raise RuntimeError("Diarization required but --hf-token is not provided")
+        else:
+            report_progress(84, "without_diarization")
 
         segments = normalize_segments(result.get("segments", []), args.require_diarization)
         if not segments:
@@ -120,6 +135,7 @@ def main() -> int:
         }
 
         output_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        report_progress(100, "done")
         return 0
     except Exception as exc:  # pragma: no cover - runtime execution path
         sys.stderr.write(f"STT worker failed: {exc}\n")

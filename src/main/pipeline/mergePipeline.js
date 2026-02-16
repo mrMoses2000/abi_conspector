@@ -87,7 +87,22 @@ export function createMergePipeline(deps) {
             recording,
             normalizedAudioPath,
             transcriptPath,
-            sttConfig: runtimeConfig.stt
+            sttConfig: runtimeConfig.stt,
+            onProgress: ({ percent, message, logPath }) => {
+              notify({
+                type: 'job:updated',
+                payload: {
+                  jobId,
+                  recordingId: recording.id,
+                  stage: 'stt_diarization',
+                  status: 'running',
+                  warning,
+                  progressPercent: percent,
+                  progressMessage: message,
+                  logPath
+                }
+              });
+            }
           });
         } catch (error) {
           const canFallback =

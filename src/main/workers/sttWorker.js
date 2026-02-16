@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
 import path from 'node:path';
 import { ControlledError } from '../utils/errors.js';
 import { runCommand } from '../utils/process.js';
@@ -33,6 +34,21 @@ export async function writeMockTranscript(payload) {
   return transcript;
 }
 
+function parseProgressLine(line) {
+  const match = String(line).trim().match(/^STT_PROGRESS\s+(\d{1,3})(?:\s+(.*))?$/i);
+  if (!match) {
+    return null;
+  }
+  const percent = Number.parseInt(match[1], 10);
+  if (!Number.isFinite(percent)) {
+    return null;
+  }
+  return {
+    percent: Math.max(0, Math.min(100, percent)),
+    message: (match[2] || '').trim()
+  };
+}
+
 /**
  * @param {{
  *   recording: any;
@@ -51,10 +67,12 @@ export async function writeMockTranscript(payload) {
  *     requireDiarization: boolean;
  *     timeoutMs: number;
  *   };
+ *   onProgress?: (payload: { percent: number; message: string; logPath: string; }) => void;
  * }} payload
  */
 export async function runSttDiarization(payload) {
-  const { recording, normalizedAudioPath, transcriptPath, sttConfig } = payload;
+  const { recording, normalizedAudioPath, transcriptPath, sttConfig, onProgress } = payload;
+  const logPath = `${transcriptPath}.stt.log`;
 
   if (sttConfig.mode === 'mock') {
     return writeMockTranscript({
@@ -89,21 +107,63 @@ export async function runSttDiarization(payload) {
     args.push('--require-diarization');
   }
 
-  if (sttConfig.hfToken) {
-    args.push('--hf-token', sttConfig.hfToken);
-  }
+  const logStream = createWriteStream(logPath, { flags: 'a', encoding: 'utf8' });
+  let stderrBuffer = '';
+  const emitProgress = (percent, message) => {
+    if (typeof onProgress === 'function') {
+      onProgress({ percent, message, logPath });
+    }
+  };
+  const writeLog = (streamName, text) => {
+    logStream.write(`[${new Date().toISOString()}][${streamName}] ${text}`);
+  };
+
+  writeLog(
+    'meta',
+    `start model=${sttConfig.model} device=${sttConfig.device} compute=${sttConfig.computeType} batch=${sttConfig.batchSize}\n`
+  );
+  emitProgress(20, 'Загрузка модели STT');
 
   try {
     await runCommand({
       command: sttConfig.pythonBin,
       args,
-      timeoutMs: sttConfig.timeoutMs
+      timeoutMs: sttConfig.timeoutMs,
+      env: {
+        ...process.env,
+        HUGGINGFACE_TOKEN: sttConfig.hfToken || process.env.HUGGINGFACE_TOKEN || ''
+      },
+      onStdout: (chunk) => writeLog('stdout', chunk),
+      onStderr: (chunk) => {
+        writeLog('stderr', chunk);
+        stderrBuffer += chunk;
+        const lines = stderrBuffer.split('\n');
+        stderrBuffer = lines.pop() || '';
+        for (const line of lines) {
+          const parsed = parseProgressLine(line);
+          if (!parsed) {
+            continue;
+          }
+          emitProgress(parsed.percent, parsed.message || 'Обработка STT');
+        }
+      }
     });
   } catch (error) {
+    writeLog(
+      'meta',
+      `failed ${error instanceof Error ? error.message : 'unknown error'}\n`
+    );
     if (error instanceof ControlledError) {
-      throw new ControlledError('STT_DIARIZATION_FAILED', error.message);
+      throw new ControlledError(
+        'STT_DIARIZATION_FAILED',
+        `${error.message}. Лог: ${logPath}`
+      );
     }
     throw error;
+  } finally {
+    await new Promise((resolve) => {
+      logStream.end(resolve);
+    });
   }
 
   const raw = await fs.readFile(transcriptPath, 'utf8').catch(() => null);
@@ -122,5 +182,6 @@ export async function runSttDiarization(payload) {
     throw new ControlledError('TRANSCRIPT_EMPTY', 'Transcript has no segments');
   }
 
+  emitProgress(100, 'Транскрибация завершена');
   return transcript;
 }

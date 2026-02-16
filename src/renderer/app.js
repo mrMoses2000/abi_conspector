@@ -8,6 +8,7 @@ const openHtmlBtn = document.getElementById('open-html-btn');
 const openMdBtn = document.getElementById('open-md-btn');
 const retryJobBtn = document.getElementById('retry-job-btn');
 const writebackNotionBtn = document.getElementById('writeback-notion-btn');
+const cleanupFailedBtn = document.getElementById('cleanup-failed-btn');
 const codexEffortSelect = document.getElementById('codex-effort-select');
 const codexSettingsStatus = document.getElementById('codex-settings-status');
 const recorderStatus = document.getElementById('recorder-status');
@@ -15,6 +16,9 @@ const importStatus = document.getElementById('import-status');
 const importList = document.getElementById('import-list');
 const queueInfo = document.getElementById('queue-info');
 const selectedJobInfo = document.getElementById('selected-job-info');
+const jobProgressStatus = document.getElementById('job-progress-status');
+const actionHint = document.getElementById('action-hint');
+const jobProgressBar = document.getElementById('job-progress-bar');
 const jobsBody = document.getElementById('jobs-body');
 
 const stageLabels = {
@@ -32,9 +36,30 @@ const sourceLabels = {
   imported_file: 'imported_file'
 };
 
+const stageProgress = {
+  normalize_audio: 12,
+  stt_diarization: 45,
+  codex_structure: 68,
+  merge: 82,
+  render_html: 93,
+  notion_writeback: 97,
+  done: 100
+};
+
+const runningStageRanges = {
+  normalize_audio: [8, 20],
+  stt_diarization: [20, 60],
+  codex_structure: [60, 75],
+  merge: [75, 88],
+  render_html: [88, 96],
+  notion_writeback: [96, 99]
+};
+
 /** @type {Array<any>} */
 let jobs = [];
 let selectedJobId = null;
+let jobsPollTimer = null;
+const liveProgressByJob = new Map();
 
 setRecorderState({ isRecording: false });
 updateActionButtons();
@@ -62,6 +87,53 @@ function formatDuration(sec) {
     return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   }
   return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function formatElapsed(isoString) {
+  if (!isoString) {
+    return '0:00';
+  }
+
+  const start = new Date(isoString).getTime();
+  if (!Number.isFinite(start)) {
+    return '0:00';
+  }
+
+  const elapsedSec = Math.max(0, Math.floor((Date.now() - start) / 1000));
+  return formatDuration(elapsedSec);
+}
+
+function elapsedSeconds(isoString) {
+  if (!isoString) {
+    return 0;
+  }
+  const start = new Date(isoString).getTime();
+  if (!Number.isFinite(start)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor((Date.now() - start) / 1000));
+}
+
+function estimateRunningPercent(selected) {
+  const [minP, maxP] = runningStageRanges[selected.stage] || [10, 95];
+  const elapsedSec = elapsedSeconds(selected.updated_at || selected.created_at);
+
+  let expectedSec = 120;
+  if (selected.stage === 'normalize_audio') {
+    expectedSec = Math.max(40, Math.floor((selected.duration_sec || 0) * 0.08));
+  } else if (selected.stage === 'stt_diarization') {
+    // CPU + diarization can be slow; use conservative estimate so bar moves gradually.
+    expectedSec = Math.max(300, Math.floor((selected.duration_sec || 0) * 2.2));
+  } else if (selected.stage === 'codex_structure' || selected.stage === 'merge') {
+    expectedSec = 180;
+  } else if (selected.stage === 'render_html') {
+    expectedSec = 45;
+  } else if (selected.stage === 'notion_writeback') {
+    expectedSec = 90;
+  }
+
+  const ratio = Math.min(0.98, elapsedSec / expectedSec);
+  return Math.floor(minP + (maxP - minP) * ratio);
 }
 
 function setImportStatus(text, isError = false) {
@@ -136,6 +208,60 @@ function setSelectedJobInfo() {
     `Выбрано: ${selected.id} | status=${selected.status} | stage=${selected.stage} | ${warningOrError}`;
 }
 
+function setProgressForSelectedJob() {
+  const selected = getSelectedJob();
+  if (!selected) {
+    jobProgressStatus.textContent = 'Прогресс: задача не выбрана';
+    jobProgressBar.style.width = '0%';
+    jobProgressBar.classList.remove('running', 'failed');
+    return;
+  }
+
+  let percent = stageProgress[selected.stage] ?? 8;
+  let suffix = '';
+  const liveProgress = liveProgressByJob.get(selected.id) || null;
+
+  if (selected.status === 'queued') {
+    percent = Math.max(percent, 6);
+    suffix = ` | в очереди ${formatElapsed(selected.created_at)}`;
+  } else if (selected.status === 'running') {
+    if (liveProgress && Number.isFinite(liveProgress.percent)) {
+      percent = Math.max(estimateRunningPercent(selected), liveProgress.percent);
+      suffix = ` | выполняется ${formatElapsed(selected.updated_at || selected.created_at)}`;
+      if (liveProgress.message) {
+        suffix += ` | ${liveProgress.message}`;
+      }
+      if (liveProgress.logFile) {
+        suffix += ` | лог: ${liveProgress.logFile}`;
+      }
+    } else {
+      percent = estimateRunningPercent(selected);
+      suffix = ` | выполняется ${formatElapsed(selected.updated_at || selected.created_at)}`;
+    }
+  } else if (selected.status === 'done') {
+    percent = 100;
+    suffix = ' | готово';
+  } else if (selected.status === 'failed') {
+    percent = 100;
+    suffix = ` | ошибка: ${selected.error_message || 'unknown'}`;
+  }
+
+  jobProgressBar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+  jobProgressBar.classList.toggle('running', selected.status === 'running');
+  jobProgressBar.classList.toggle('failed', selected.status === 'failed');
+  jobProgressStatus.textContent =
+    `Прогресс: ${percent}% | ${stageLabels[selected.stage] ?? selected.stage} (${selected.status})${suffix}`;
+}
+
+function setQueueSummary(rows) {
+  const total = rows.length;
+  const queued = rows.filter((row) => row.status === 'queued').length;
+  const running = rows.filter((row) => row.status === 'running').length;
+  const done = rows.filter((row) => row.status === 'done').length;
+  const failed = rows.filter((row) => row.status === 'failed').length;
+  queueInfo.textContent = `Очередь: total=${total}, queued=${queued}, running=${running}, done=${done}, failed=${failed}`;
+}
+
 function updateActionButtons() {
   const selected = getSelectedJob();
   const hasSelection = Boolean(selected);
@@ -145,11 +271,36 @@ function updateActionButtons() {
   openMdBtn.disabled = !canOpenResults;
   writebackNotionBtn.disabled = !canOpenResults;
   retryJobBtn.disabled = !hasSelection;
+
+  if (!hasSelection) {
+    actionHint.textContent = 'Подсказка: выберите задачу в таблице.';
+    return;
+  }
+
+  if (selected.status === 'done') {
+    actionHint.textContent = 'Подсказка: задача готова, можно открыть HTML/MD и отправить в Notion.';
+    return;
+  }
+
+  if (selected.status === 'failed') {
+    actionHint.textContent = 'Подсказка: задача упала. Нажмите "Повторить задачу".';
+    return;
+  }
+
+  actionHint.textContent =
+    'Подсказка: результаты открываются после `done`. Сейчас задача ещё обрабатывается.';
 }
 
 function renderJobs(rows) {
   jobs = rows || [];
+  const runningIds = new Set(jobs.filter((row) => row.status === 'running').map((row) => row.id));
+  for (const jobId of liveProgressByJob.keys()) {
+    if (!runningIds.has(jobId)) {
+      liveProgressByJob.delete(jobId);
+    }
+  }
   ensureSelectedJob(jobs);
+  setQueueSummary(jobs);
 
   jobsBody.innerHTML = '';
 
@@ -158,6 +309,7 @@ function renderJobs(rows) {
     tr.innerHTML = `<td colspan="7" class="muted">Пока нет задач</td>`;
     jobsBody.append(tr);
     setSelectedJobInfo();
+    setProgressForSelectedJob();
     updateActionButtons();
     return;
   }
@@ -190,12 +342,25 @@ function renderJobs(rows) {
   }
 
   setSelectedJobInfo();
+  setProgressForSelectedJob();
   updateActionButtons();
 }
 
 async function refreshJobs() {
   const rows = await api.listJobs();
   renderJobs(rows);
+}
+
+function startJobsPolling() {
+  if (jobsPollTimer) {
+    return;
+  }
+
+  jobsPollTimer = setInterval(() => {
+    refreshJobs().catch((error) => {
+      setImportStatus(`Не удалось обновить задачи: ${error.message}`, true);
+    });
+  }, 3000);
 }
 
 async function loadCodexSettings() {
@@ -287,6 +452,16 @@ retryJobBtn.addEventListener('click', () => {
   });
 });
 
+cleanupFailedBtn.addEventListener('click', () => {
+  withStatus('Очищаем упавшие задачи...', async () => {
+    const result = await api.cleanupFailedJobs();
+    setImportStatus(
+      `Удалено задач: ${result?.deletedJobs ?? 0}, удалено записей: ${result?.deletedRecordings ?? 0}`
+    );
+    await refreshJobs();
+  });
+});
+
 writebackNotionBtn.addEventListener('click', () => {
   withStatus('Отправляем merged в Notion...', async () => {
     const selected = getSelectedJob();
@@ -339,6 +514,7 @@ if (!api) {
     openMdBtn,
     retryJobBtn,
     writebackNotionBtn,
+    cleanupFailedBtn,
     codexEffortSelect
   ].forEach((btn) => {
     btn.disabled = true;
@@ -361,6 +537,20 @@ if (!api) {
   });
 
   api.onJobUpdated((payload) => {
+    if (payload?.jobId) {
+      if (payload.status === 'running' && Number.isFinite(payload.progressPercent)) {
+        const rawLogPath = typeof payload.logPath === 'string' ? payload.logPath : '';
+        const logFile = rawLogPath.split(/[\\/]/).pop() || '';
+        liveProgressByJob.set(payload.jobId, {
+          percent: payload.progressPercent,
+          message: typeof payload.progressMessage === 'string' ? payload.progressMessage : '',
+          logFile
+        });
+      } else if (payload.status === 'done' || payload.status === 'failed') {
+        liveProgressByJob.delete(payload.jobId);
+      }
+    }
+
     const card = importList.querySelector(`[data-recording-id="${payload.recordingId}"]`);
     if (card) {
       const statusLine = card.querySelector('.conversion-status');
@@ -382,7 +572,16 @@ if (!api) {
     setCodexStatus(`Не удалось загрузить профиль Codex: ${error.message}`, true);
   });
 
+  startJobsPolling();
+
   refreshJobs().catch((error) => {
     setImportStatus(`Не удалось загрузить список задач: ${error.message}`, true);
   });
 }
+
+window.addEventListener('beforeunload', () => {
+  if (jobsPollTimer) {
+    clearInterval(jobsPollTimer);
+    jobsPollTimer = null;
+  }
+});

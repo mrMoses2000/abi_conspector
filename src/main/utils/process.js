@@ -9,6 +9,8 @@ import { ControlledError } from './errors.js';
  *   env?: Record<string, string | undefined>;
  *   stdin?: string;
  *   timeoutMs?: number;
+ *   onStdout?: (chunk: string) => void;
+ *   onStderr?: (chunk: string) => void;
  * }} payload
  */
 export async function runCommand(payload) {
@@ -18,7 +20,9 @@ export async function runCommand(payload) {
     cwd = process.cwd(),
     env = process.env,
     stdin = '',
-    timeoutMs = 5 * 60 * 1000
+    timeoutMs = 5 * 60 * 1000,
+    onStdout = null,
+    onStderr = null
   } = payload;
 
   return new Promise((resolve, reject) => {
@@ -38,11 +42,19 @@ export async function runCommand(payload) {
     }, timeoutMs);
 
     child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
+      const text = chunk.toString();
+      stdout += text;
+      if (typeof onStdout === 'function') {
+        onStdout(text);
+      }
     });
 
     child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
+      const text = chunk.toString();
+      stderr += text;
+      if (typeof onStderr === 'function') {
+        onStderr(text);
+      }
     });
 
     child.on('error', (error) => {

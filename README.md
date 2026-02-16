@@ -18,6 +18,7 @@ The app is configured for fail-safe behavior by default: if STT/Codex real worke
 - `Профиль Codex (low|medium|high)` - GUI switch for runtime `model_reasoning_effort`.
 - `Открыть папку данных` - opens managed storage (`audio/transcripts/merged/html`).
 - Job actions (for selected row): `Открыть HTML`, `Открыть merged.md`, `Повторить задачу`, `Комбинировать с Notion`.
+- `Очистить упавшие` - removes all `failed` jobs. If a recording has no jobs left, related artifacts are removed too.
 
 ## Install
 
@@ -78,6 +79,20 @@ For project-level Codex behavior, keep `AGENTS.md` and `.agents/skills/*/SKILL.m
 - `CONSPECTOR_NOTION_PAGE_ID=<page-id>` or
 - `CONSPECTOR_NOTION_PAGE_TITLE=<exact-unique-title>`
 - `CONSPECTOR_NOTION_SOFT_FAIL=true|false` (default: `true`)
+
+Notion setup checklist:
+
+1. Create an internal Notion integration and copy its token (`NOTION_TOKEN`).
+2. In integration capabilities enable content access:
+   - Read content
+   - Update content
+   - Insert content
+3. Open target page in Notion -> `...` -> `Add connections` -> choose your integration.
+4. Set one target selector:
+   - `CONSPECTOR_NOTION_PAGE_ID` (recommended), or
+   - `CONSPECTOR_NOTION_PAGE_TITLE` (exact unique title).
+
+`CONSPECTOR_NOTION_PAGE_ID` can be taken from page URL as the trailing 32-char id (with or without dashes).
 
 ### Resilience controls
 

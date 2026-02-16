@@ -14,6 +14,7 @@ import { IPC_CHANNELS } from '../../shared/ipc-contract.js';
  *   getCodexSettings: () => { model: string; reasoningEffort: string; fullAuto: boolean; };
  *   updateCodexSettings: (payload: { reasoningEffort?: string; }) => { model: string; reasoningEffort: string; fullAuto: boolean; };
  *   writebackNotion: (payload: { recordingId: string; pageTitle?: string }) => Promise<any>;
+ *   cleanupFailedJobs: () => Promise<{ deletedJobs: number; deletedRecordings: number; }>;
  *   db: import('../db/database.js').AppDatabase;
  *   queue: import('../pipeline/mergeQueue.js').MergeQueue;
  *   managedPaths: ReturnType<import('../config.js').getManagedPaths>;
@@ -29,6 +30,7 @@ export function registerIpcHandlers(deps) {
     getCodexSettings,
     updateCodexSettings,
     writebackNotion,
+    cleanupFailedJobs,
     db,
     queue,
     managedPaths
@@ -101,6 +103,10 @@ export function registerIpcHandlers(deps) {
 
   ipcMain.handle(IPC_CHANNELS.JOBS_LIST, async () => {
     return db.listRecentJobs(100);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.JOBS_CLEANUP_FAILED, async () => {
+    return cleanupFailedJobs();
   });
 
   ipcMain.handle(IPC_CHANNELS.CODEX_SETTINGS_GET, async () => {

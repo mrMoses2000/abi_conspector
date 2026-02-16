@@ -7,6 +7,7 @@ export const IPC_CHANNELS = {
   RECORDER_STOP: 'recorder:stop',
   RECORDER_STATE: 'recorder:state',
   JOBS_LIST: 'jobs:list',
+  JOBS_CLEANUP_FAILED: 'jobs:cleanup:failed',
   JOB_RETRY: 'job:retry',
   CODEX_SETTINGS_GET: 'codex:settings:get',
   CODEX_SETTINGS_UPDATE: 'codex:settings:update',
