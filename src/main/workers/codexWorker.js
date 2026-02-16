@@ -1,0 +1,153 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { ControlledError } from '../utils/errors.js';
+import { runCommand } from '../utils/process.js';
+
+async function readText(pathname) {
+  return fs.readFile(pathname, 'utf8');
+}
+
+/**
+ * @param {string | undefined} value
+ */
+export function normalizeReasoningEffort(value) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'low' || normalized === 'medium' || normalized === 'high') {
+    return normalized;
+  }
+  return 'medium';
+}
+
+/**
+ * @param {{
+ *   fullAuto?: boolean;
+ *   model?: string;
+ *   workdir: string;
+ *   reasoningEffort?: string;
+ * }} config
+ * @param {string} outputPath
+ */
+export function buildCodexExecArgs(config, outputPath) {
+  const args = ['exec', '--skip-git-repo-check', '--output-last-message', outputPath, '--cd', config.workdir];
+  if (config.fullAuto !== false) {
+    args.push('--full-auto');
+  }
+
+  if (config.model) {
+    args.push('-m', config.model);
+  }
+
+  args.push('-c', `model_reasoning_effort="${normalizeReasoningEffort(config.reasoningEffort)}"`);
+  args.push('-');
+  return args;
+}
+
+/**
+ * @param {{
+ *   mode: 'real' | 'mock';
+ *   fullAuto?: boolean;
+ *   model: string;
+ *   reasoningEffort?: string;
+ *   timeoutMs: number;
+ *   workdir: string;
+ *   sourceNotePath: string;
+ * }} config
+ * @param {string} outputPath
+ * @param {string} prompt
+ */
+async function runCodex(config, outputPath, prompt) {
+  if (config.mode === 'mock') {
+    const mockMarkdown = [
+      '# Mock Codex Output',
+      '',
+      '> Generated in CONSPECTOR_CODEX_MODE=mock.',
+      '',
+      '## Notes',
+      '- Real codex worker is disabled.',
+      '',
+      '## Prompt Snapshot',
+      '```text',
+      prompt.slice(0, 1400),
+      '```'
+    ].join('\n');
+    await fs.writeFile(outputPath, mockMarkdown, 'utf8');
+    return;
+  }
+
+  const args = buildCodexExecArgs(config, outputPath);
+
+  try {
+    await runCommand({
+      command: 'codex',
+      args,
+      stdin: prompt,
+      timeoutMs: config.timeoutMs
+    });
+  } catch (error) {
+    if (error instanceof ControlledError) {
+      throw new ControlledError('CODEX_EXEC_FAILED', error.message);
+    }
+    throw error;
+  }
+
+  const text = await fs.readFile(outputPath, 'utf8').catch(() => '');
+  if (!text.trim()) {
+    throw new ControlledError('CODEX_EMPTY_OUTPUT', 'codex exec returned empty output');
+  }
+}
+
+/**
+ * @param {{
+ *   transcriptPath: string;
+ *   structuredPath: string;
+ *   recording: any;
+ *   codexConfig: {
+ *     mode: 'real' | 'mock';
+ *     fullAuto?: boolean;
+ *     model: string;
+ *     reasoningEffort?: string;
+ *     timeoutMs: number;
+ *     workdir: string;
+ *     sourceNotePath: string;
+ *   };
+ * }} payload
+ */
+export async function runCodexStructure(payload) {
+  const { transcriptPath, structuredPath, recording, codexConfig } = payload;
+  const transcriptJson = await readText(transcriptPath);
+
+  const prompt = `Ты редактор академического конспекта.\n\nЗадача: преобразуй diarized transcript в качественный русский markdown-конспект.\n\nПравила:\n- Пиши строго markdown и без пояснений вне результата.\n- Сохраняй факты из транскрипта, не выдумывай новые.\n- Используй структуру: \"Краткое summary\", \"Ключевые тезисы\", \"Термины\", \"Примеры\", \"Вопросы к экзамену\", \"TODO\".\n- Если в транскрипте есть неоднозначности, добавь блок \"Открытые вопросы\".\n\nКонтекст:\n- recording_id: ${recording.id}\n- source_file: ${recording.original_file_name ?? recording.id}\n\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\``;
+
+  await runCodex(codexConfig, structuredPath, prompt);
+}
+
+/**
+ * @param {{
+ *   structuredPath: string;
+ *   mergedPath: string;
+ *   recording: any;
+ *   codexConfig: {
+ *     mode: 'real' | 'mock';
+ *     fullAuto?: boolean;
+ *     model: string;
+ *     reasoningEffort?: string;
+ *     timeoutMs: number;
+ *     workdir: string;
+ *     sourceNotePath: string;
+ *   };
+ * }} payload
+ */
+export async function runCodexMerge(payload) {
+  const { structuredPath, mergedPath, recording, codexConfig } = payload;
+  const structuredMd = await readText(structuredPath);
+
+  let sourceMd = '';
+  if (codexConfig.sourceNotePath) {
+    const sourcePath = path.resolve(codexConfig.sourceNotePath);
+    sourceMd = await fs.readFile(sourcePath, 'utf8').catch(() => '');
+  }
+
+  const prompt = `Ты редактор учебного материала.\n\nЗадача: сделать полную merged-версию конспекта в markdown на русском языке.\n\nТребования:\n- Верни только markdown.\n- Если базовый конспект пустой, используй структурированный материал как основу.\n- Если базовый конспект есть, аккуратно объединяй и улучшай структуру.\n- Сохрани совместимость с импортом в Notion (обычные заголовки/списки/таблицы/цитаты).\n- Добавь раздел \"Схема\" с mermaid-блоком.\n\nКонтекст:\n- recording_id: ${recording.id}\n- source_file: ${recording.original_file_name ?? recording.id}\n\nStructured markdown:\n\n\`\`\`md\n${structuredMd}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${sourceMd || '# (пусто)'}\n\`\`\``;
+
+  await runCodex(codexConfig, mergedPath, prompt);
+}

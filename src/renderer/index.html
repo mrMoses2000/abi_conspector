@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ABI Conspector</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section class="panel recorder">
+        <h1>Recorder</h1>
+        <p class="muted">Записывайте с микрофона или импортируйте аудио/видео. Всё попадает в единый pipeline.</p>
+        <div class="controls">
+          <label class="control-label" for="codex-effort-select">Профиль Codex</label>
+          <select id="codex-effort-select" class="select">
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+          </select>
+        </div>
+        <div id="codex-settings-status" class="status">Codex профиль: medium</div>
+        <div class="controls">
+          <button id="start-recording-btn" class="btn secondary">Начать запись</button>
+          <button id="stop-recording-btn" class="btn secondary" disabled>Стоп</button>
+          <button id="add-audio-btn" class="btn primary">Добавить аудио файл</button>
+          <button id="open-data-btn" class="btn ghost">Открыть папку данных</button>
+        </div>
+        <div id="recorder-status" class="status">Микрофон: не записывает</div>
+        <div id="import-status" class="status">Ожидание действий</div>
+        <div id="import-list" class="list"></div>
+      </section>
+
+      <section class="panel jobs">
+        <h2>Очередь задач</h2>
+        <p class="muted">Выберите задачу и выполните действие: открыть результат, повторить обработку, отправить в Notion.</p>
+        <div id="queue-info" class="status">Очередь не запущена</div>
+        <div id="selected-job-info" class="status">Задача не выбрана</div>
+        <div class="controls">
+          <button id="open-html-btn" class="btn secondary">Открыть HTML</button>
+          <button id="open-md-btn" class="btn secondary">Открыть merged.md</button>
+          <button id="retry-job-btn" class="btn secondary">Повторить задачу</button>
+          <button id="writeback-notion-btn" class="btn secondary">Комбинировать с Notion</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Выбор</th>
+              <th>Файл</th>
+              <th>Источник</th>
+              <th>Этап</th>
+              <th>Статус</th>
+              <th>Длительность</th>
+              <th>Ошибка / warning</th>
+            </tr>
+          </thead>
+          <tbody id="jobs-body"></tbody>
+        </table>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

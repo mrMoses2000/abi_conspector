@@ -1,0 +1,25 @@
+{
+  "name": "abi-conspector",
+  "version": "0.1.0",
+  "description": "Lecture conspector desktop MVP",
+  "main": "src/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "preflight": "node -r dotenv/config scripts/preflight.js",
+    "smoke:import": "node -r dotenv/config scripts/smoke-import.js",
+    "start:ready": "CONSPECTOR_STT_MODE=mock CONSPECTOR_CODEX_MODE=mock npm run preflight && npm run smoke:import && npm start",
+    "start:real": "npm run preflight && npm start",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "dependencies": {
+    "@notionhq/client": "^3.1.0",
+    "dotenv": "^17.2.3",
+    "electron": "^36.0.0",
+    "markdown-it": "^14.1.0"
+  }
+}
