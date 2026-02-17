@@ -48,6 +48,7 @@ chmod +x run.sh
 Interactive launcher provides one menu for:
 
 - `.env` setup wizard (no manual editing required)
+- auto-check/install prompt for Node.js 24 + npm on Ubuntu
 - bootstrap dependencies
 - preflight
 - desktop start

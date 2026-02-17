@@ -33,6 +33,94 @@ Notion API integration is available on both macOS and Linux.
 MSG
 }
 
+node_major_version() {
+  if ! command -v node >/dev/null 2>&1; then
+    echo "0"
+    return
+  fi
+  local raw
+  raw="$(node -v 2>/dev/null || true)"
+  raw="${raw#v}"
+  echo "${raw%%.*}"
+}
+
+node_runtime_ok() {
+  if ! command -v node >/dev/null 2>&1; then
+    return 1
+  fi
+  if ! command -v npm >/dev/null 2>&1; then
+    return 1
+  fi
+  local major
+  major="$(node_major_version)"
+  if [[ ! "$major" =~ ^[0-9]+$ ]]; then
+    return 1
+  fi
+  (( major >= 24 ))
+}
+
+print_node_runtime_status() {
+  local node_v="missing"
+  local npm_v="missing"
+  if command -v node >/dev/null 2>&1; then
+    node_v="$(node -v 2>/dev/null || echo "unknown")"
+  fi
+  if command -v npm >/dev/null 2>&1; then
+    npm_v="$(npm -v 2>/dev/null || echo "unknown")"
+  fi
+  echo "Node runtime status: node=${node_v}, npm=${npm_v} (required: Node.js >=24)"
+}
+
+install_node_runtime_ubuntu() {
+  echo
+  echo "Installing Node.js 24.x + npm for Ubuntu..."
+  sudo apt-get update
+  sudo apt-get install -y ca-certificates curl gnupg
+  curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+  sudo apt-get install -y nodejs
+  print_node_runtime_status
+}
+
+ensure_node_runtime_linux() {
+  if node_runtime_ok; then
+    return
+  fi
+
+  print_node_runtime_status
+  echo "This action requires node/npm, but runtime is not ready."
+  if ask_yes_no "Install Node.js 24.x now (Ubuntu/apt)?" "y"; then
+    install_node_runtime_ubuntu
+    if ! node_runtime_ok; then
+      echo "Node runtime is still not ready."
+      echo "Fallback option:"
+      echo "  curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash"
+      echo "  source ~/.bashrc"
+      echo "  nvm install 24 && nvm use 24"
+      exit 1
+    fi
+  else
+    echo "Skipped Node.js installation. Please install Node.js >=24 and npm, then retry."
+    exit 1
+  fi
+}
+
+ensure_node_runtime_if_needed() {
+  local reason="${1:-command}"
+  if [[ "$OS_NAME" == "Linux" ]]; then
+    ensure_node_runtime_linux
+    return
+  fi
+
+  if node_runtime_ok; then
+    return
+  fi
+
+  print_node_runtime_status
+  echo "Cannot run \"$reason\" without Node.js >=24 and npm."
+  echo "Install Node.js manually for $PLATFORM_LABEL and retry."
+  exit 1
+}
+
 ensure_env_file() {
   if [[ -f "$ENV_FILE" ]]; then
     return
@@ -270,6 +358,7 @@ run_bootstrap() {
 }
 
 run_preflight() {
+  ensure_node_runtime_if_needed "preflight"
   local mode="${1:-prompt}"
   if [[ "$mode" == "strict" ]]; then
     CONSPECTOR_PREFLIGHT_STRICT=true npm run preflight
@@ -288,18 +377,22 @@ run_preflight() {
 }
 
 run_desktop() {
+  ensure_node_runtime_if_needed "desktop"
   npm start
 }
 
 run_desktop_real() {
+  ensure_node_runtime_if_needed "desktop-real"
   npm run start:real
 }
 
 run_web() {
+  ensure_node_runtime_if_needed "web"
   npm run start:web
 }
 
 run_tests() {
+  ensure_node_runtime_if_needed "test"
   npm test
 }
 
