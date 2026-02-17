@@ -10,6 +10,8 @@
     "start": "electron .",
     "start:web": "node -r dotenv/config web/server.js",
     "preflight": "node -r dotenv/config scripts/preflight.js",
+    "env:doctor": "node scripts/env-doctor.js",
+    "env:doctor:write": "node scripts/env-doctor.js --write",
     "smoke:import": "node -r dotenv/config scripts/smoke-import.js",
     "start:ready": "CONSPECTOR_STT_MODE=mock CONSPECTOR_CODEX_MODE=mock npm run preflight && npm run smoke:import && npm start",
     "start:real": "npm run preflight && npm start",

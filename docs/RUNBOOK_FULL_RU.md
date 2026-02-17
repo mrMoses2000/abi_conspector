@@ -34,6 +34,24 @@ chmod +x run.sh
 ./run.sh --configure-env
 ```
 
+Если в `.env` уже остались шаблонные пути (например `/Users/you/abi_conspector/...`), используйте:
+
+```bash
+./run.sh --fix-env-paths
+```
+
+Проверка корректности переменных и подсказки по каждой ошибке:
+
+```bash
+./run.sh --env-doctor
+```
+
+Автоматически применить безопасные исправления:
+
+```bash
+./run.sh --env-doctor-write
+```
+
 Рекомендуемые значения:
 - `CONSPECTOR_STT_MODE=real`
 - `CONSPECTOR_STT_PRIMARY=groq`
@@ -110,6 +128,7 @@ curl https://api.groq.com/openai/v1/models \
 ## 7. Проверка готовности
 
 ```bash
+./run.sh --env-doctor
 ./run.sh --preflight-strict
 npm test
 npm run smoke:import

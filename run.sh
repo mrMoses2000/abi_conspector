@@ -134,6 +134,92 @@ ensure_env_file() {
   echo "Created empty $ENV_FILE"
 }
 
+normalize_project_path_value() {
+  local value="$1"
+  value="$(strip_outer_quotes "$value")"
+  if [[ -z "$value" ]]; then
+    printf ''
+    return
+  fi
+
+  if [[ "$value" == "/path/to/workdir" ]]; then
+    printf '%s' "$ROOT_DIR"
+    return
+  fi
+
+  local suffix=''
+  if [[ "$value" == *"/abi_conspector"* ]]; then
+    suffix="${value#*"/abi_conspector"}"
+    printf '%s' "${ROOT_DIR}${suffix}"
+    return
+  fi
+
+  if [[ "$value" == "\$HOME/abi_conspector"* ]]; then
+    suffix="${value#"\$HOME/abi_conspector"}"
+    printf '%s' "${ROOT_DIR}${suffix}"
+    return
+  fi
+
+  if [[ "$value" == "~/"* ]]; then
+    printf '%s' "${HOME}/${value#"~/"}"
+    return
+  fi
+
+  if [[ "$value" != /* && "$value" != "" ]]; then
+    printf '%s' "${ROOT_DIR}/${value}"
+    return
+  fi
+
+  printf '%s' "$value"
+}
+
+run_fix_env_paths() {
+  local mode="${1:-verbose}"
+  ensure_env_file
+
+  local updated=0
+  local keys=(
+    "CONSPECTOR_WHISPERCPP_BIN"
+    "CONSPECTOR_WHISPERCPP_MODEL_PATH"
+    "CONSPECTOR_STT_PYTHON"
+    "CONSPECTOR_STT_SCRIPT"
+    "CONSPECTOR_CODEX_WORKDIR"
+  )
+
+  for key in "${keys[@]}"; do
+    local fallback=''
+    case "$key" in
+      CONSPECTOR_WHISPERCPP_BIN) fallback="$DEFAULT_WHISPER_BIN" ;;
+      CONSPECTOR_WHISPERCPP_MODEL_PATH) fallback="$DEFAULT_WHISPER_MODEL" ;;
+      CONSPECTOR_STT_PYTHON) fallback="$ROOT_DIR/.venv-stt/bin/python" ;;
+      CONSPECTOR_STT_SCRIPT) fallback="$ROOT_DIR/scripts/run_stt_diarization.py" ;;
+      CONSPECTOR_CODEX_WORKDIR) fallback="$ROOT_DIR" ;;
+      *) fallback='' ;;
+    esac
+
+    local current
+    current="$(get_env_value "$key" "$fallback")"
+    local normalized
+    normalized="$(normalize_project_path_value "$current")"
+    if [[ "$current" != "$normalized" || -z "$(get_env_value "$key" "")" ]]; then
+      set_env_value "$key" "$normalized"
+      updated=$((updated + 1))
+      if [[ "$mode" != "quiet" ]]; then
+        echo "Updated $key=$normalized"
+      fi
+    fi
+  done
+
+  if [[ "$mode" != "quiet" ]]; then
+    if [[ "$updated" -eq 0 ]]; then
+      echo "No path placeholders found. .env path variables already look good."
+    else
+      echo "Path auto-fix completed. Updated variables: $updated"
+      echo "Run ./run.sh --env-doctor to verify all environment variables."
+    fi
+  fi
+}
+
 strip_outer_quotes() {
   local value="$1"
   if [[ "${#value}" -ge 2 && "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
@@ -266,9 +352,11 @@ pick_from_choices() {
 
 run_configure_env() {
   ensure_env_file
+  run_fix_env_paths "quiet"
   echo
   echo "=== .env setup wizard ==="
   echo "File: $ENV_FILE"
+  echo "Project root detected: $ROOT_DIR"
   echo
 
   local stt_primary_default
@@ -301,15 +389,15 @@ run_configure_env() {
   set_env_value "CONSPECTOR_GROQ_MAX_FILE_MB" "$(read_prompt "Groq max file size MB" "$(get_env_value "CONSPECTOR_GROQ_MAX_FILE_MB" "25")")"
   set_env_value "CONSPECTOR_GROQ_CHUNK_MIN" "$(read_prompt "Groq chunk length (minutes)" "$(get_env_value "CONSPECTOR_GROQ_CHUNK_MIN" "18")")"
 
-  set_env_value "CONSPECTOR_WHISPERCPP_BIN" "$(read_prompt "whisper.cpp binary path" "$(get_env_value "CONSPECTOR_WHISPERCPP_BIN" "$DEFAULT_WHISPER_BIN")")"
-  set_env_value "CONSPECTOR_WHISPERCPP_MODEL_PATH" "$(read_prompt "whisper.cpp model path" "$(get_env_value "CONSPECTOR_WHISPERCPP_MODEL_PATH" "$DEFAULT_WHISPER_MODEL")")"
+  set_env_value "CONSPECTOR_WHISPERCPP_BIN" "$(read_prompt "whisper.cpp binary path" "$(normalize_project_path_value "$(get_env_value "CONSPECTOR_WHISPERCPP_BIN" "$DEFAULT_WHISPER_BIN")")")"
+  set_env_value "CONSPECTOR_WHISPERCPP_MODEL_PATH" "$(read_prompt "whisper.cpp model path" "$(normalize_project_path_value "$(get_env_value "CONSPECTOR_WHISPERCPP_MODEL_PATH" "$DEFAULT_WHISPER_MODEL")")")"
   set_env_value "CONSPECTOR_WHISPERCPP_THREADS" "$(read_prompt "whisper.cpp threads" "$(get_env_value "CONSPECTOR_WHISPERCPP_THREADS" "2")")"
   set_env_value "CONSPECTOR_WHISPER_MODEL" "$(read_prompt "Whisper label (metadata)" "$(get_env_value "CONSPECTOR_WHISPER_MODEL" "base")")"
 
   set_env_value "CONSPECTOR_CODEX_MODE" "real"
   set_env_value "CONSPECTOR_CODEX_EFFORT" "$(pick_from_choices "Codex effort (low|medium|high)" "$(get_env_value "CONSPECTOR_CODEX_EFFORT" "medium")" "low" "medium" "high")"
   set_env_value "CONSPECTOR_CODEX_TIMEOUT_SEC" "$(read_prompt "Codex timeout sec" "$(get_env_value "CONSPECTOR_CODEX_TIMEOUT_SEC" "600")")"
-  set_env_value "CONSPECTOR_CODEX_WORKDIR" "$(read_prompt "Codex workdir" "$(get_env_value "CONSPECTOR_CODEX_WORKDIR" "$ROOT_DIR")")"
+  set_env_value "CONSPECTOR_CODEX_WORKDIR" "$(read_prompt "Codex workdir" "$(normalize_project_path_value "$(get_env_value "CONSPECTOR_CODEX_WORKDIR" "$ROOT_DIR")")")"
   set_env_value "CONSPECTOR_CODEX_MODEL" "$(read_prompt "Codex model override (empty = default)" "$(get_env_value "CONSPECTOR_CODEX_MODEL" "")")"
 
   local notion_default='n'
@@ -336,6 +424,7 @@ run_configure_env() {
   echo "Saved configuration to: $ENV_FILE"
   echo "Next steps:"
   echo "  1) ./run.sh --preflight"
+  echo "  1.1) ./run.sh --env-doctor"
   echo "  2) ./run.sh --desktop-real   (Electron)"
   echo "  3) ./run.sh --web            (browser mode)"
   echo
@@ -396,6 +485,16 @@ run_tests() {
   npm test
 }
 
+run_env_doctor() {
+  ensure_node_runtime_if_needed "env-doctor"
+  local mode="${1:-readonly}"
+  if [[ "$mode" == "write" ]]; then
+    node scripts/env-doctor.js --write
+    return
+  fi
+  node scripts/env-doctor.js
+}
+
 run_ubuntu_web_stack() {
   if [[ "$OS_NAME" != "Linux" ]]; then
     echo "Ubuntu web stack is only available on Linux."
@@ -408,14 +507,16 @@ run_ubuntu_web_stack() {
 show_menu() {
   cat <<'MSG'
 1) Configure .env (wizard)
-2) Bootstrap dependencies
-3) Preflight check
-4) Start desktop app (Electron)
-5) Start desktop app (real mode)
-6) Start web app (accounts/roles/shared view)
-7) Run tests
-8) Start Ubuntu web stack (Docker + Nginx)
-9) Exit
+2) Auto-fix .env template paths (to absolute project path)
+3) Env doctor (validate env variables)
+4) Bootstrap dependencies
+5) Preflight check
+6) Start desktop app (Electron)
+7) Start desktop app (real mode)
+8) Start web app (accounts/roles/shared view)
+9) Run tests
+10) Start Ubuntu web stack (Docker + Nginx)
+11) Exit
 MSG
 }
 
@@ -423,17 +524,19 @@ run_interactive() {
   print_header
   while true; do
     show_menu
-    read -r -p "Choose action [1-9]: " choice
+    read -r -p "Choose action [1-11]: " choice
     case "$choice" in
       1) run_configure_env ;;
-      2) run_bootstrap "prompt" ;;
-      3) run_preflight "prompt" ;;
-      4) run_desktop ;;
-      5) run_desktop_real ;;
-      6) run_web ;;
-      7) run_tests ;;
-      8) run_ubuntu_web_stack ;;
-      9) exit 0 ;;
+      2) run_fix_env_paths "verbose" ;;
+      3) run_env_doctor "readonly" ;;
+      4) run_bootstrap "prompt" ;;
+      5) run_preflight "prompt" ;;
+      6) run_desktop ;;
+      7) run_desktop_real ;;
+      8) run_web ;;
+      9) run_tests ;;
+      10) run_ubuntu_web_stack ;;
+      11) exit 0 ;;
       *) echo "Unknown option: $choice" ;;
     esac
   done
@@ -444,6 +547,9 @@ print_help() {
 Usage:
   ./run.sh                 # interactive mode
   ./run.sh --configure-env
+  ./run.sh --fix-env-paths
+  ./run.sh --env-doctor
+  ./run.sh --env-doctor-write
   ./run.sh --bootstrap
   ./run.sh --bootstrap-web
   ./run.sh --preflight
@@ -464,6 +570,9 @@ fi
 
 case "${1:-}" in
   --configure-env) run_configure_env ;;
+  --fix-env-paths) run_fix_env_paths "verbose" ;;
+  --env-doctor) run_env_doctor "readonly" ;;
+  --env-doctor-write) run_env_doctor "write" ;;
   --bootstrap) run_bootstrap "default" ;;
   --bootstrap-web) run_bootstrap "web" ;;
   --preflight) run_preflight "default" ;;

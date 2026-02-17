@@ -49,6 +49,8 @@ chmod +x run.sh
 
 Интерактивное меню включает:
 - мастер настройки `.env` (без ручного редактирования файла)
+- автоматическую починку шаблонных путей в `.env` (подставляет абсолютный путь текущего проекта)
+- `env doctor`: проверку корректности переменных с подсказками по исправлению
 - авто-проверку/предложение установки `Node.js 24 + npm` на Ubuntu
 - установку зависимостей
 - preflight
@@ -60,6 +62,9 @@ chmod +x run.sh
 
 ```bash
 ./run.sh --configure-env
+./run.sh --fix-env-paths
+./run.sh --env-doctor
+./run.sh --env-doctor-write
 ./run.sh --bootstrap
 ./run.sh --bootstrap-web
 ./run.sh --preflight
@@ -70,6 +75,13 @@ chmod +x run.sh
 ./run.sh --test
 ./run.sh --ubuntu-web-stack
 ./run.sh --help
+```
+
+Дополнительно через npm:
+
+```bash
+npm run env:doctor
+npm run env:doctor:write
 ```
 
 ## Bootstrap для macOS/Ubuntu
