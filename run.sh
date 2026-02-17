@@ -710,7 +710,7 @@ run_web() {
   echo "[2/3] Starting Nginx reverse proxy (Docker)..."
   ensure_docker_ready
   CONSPECTOR_WEB_ROOT="$ROOT_DIR/web" \
-    docker compose -f "$ROOT_DIR/deploy/ubuntu-web/docker-compose.yml" up -d
+    sudo docker compose -f "$ROOT_DIR/deploy/ubuntu-web/docker-compose.yml" up -d
 
   # 4. Done
   local server_ip
@@ -781,7 +781,15 @@ ensure_docker_ready() {
     fi
   fi
 
-  if ! docker info >/dev/null 2>&1; then
+  # Ensure user is in docker group (must happen before daemon checks)
+  if ! groups "$USER" | grep -q '\bdocker\b'; then
+    echo "Adding $USER to docker group..."
+    sudo usermod -aG docker "$USER"
+    echo "Added to docker group."
+  fi
+
+  # Check if daemon is running (use sudo since group change may not be active yet)
+  if ! sudo docker info >/dev/null 2>&1; then
     echo "Docker daemon is not running. Starting..."
     sudo systemctl daemon-reload
     sudo systemctl enable docker
@@ -791,30 +799,24 @@ ensure_docker_ready() {
       echo "  Attempting to start Docker (try $attempt/$max_attempts)..."
       sudo systemctl start docker
       sleep 5
-      if docker info >/dev/null 2>&1; then
+      if sudo docker info >/dev/null 2>&1; then
         echo "Docker daemon started."
         break
       fi
       (( attempt++ ))
     done
-    if ! docker info >/dev/null 2>&1; then
+    if ! sudo docker info >/dev/null 2>&1; then
       echo "ERROR: Failed to start Docker daemon after $max_attempts attempts."
       echo "Check logs: sudo journalctl -xeu docker.service"
       sudo journalctl -xeu docker.service --no-pager | tail -15
       exit 1
     fi
   fi
-
-  if ! groups "$USER" | grep -q '\bdocker\b'; then
-    echo "Adding $USER to docker group..."
-    sudo usermod -aG docker "$USER"
-    echo "Added. You may need to log out and back in for group changes to take effect."
-  fi
 }
 
 run_ubuntu_web_stack() {
   ensure_docker_ready
-  docker compose -f deploy/ubuntu-web/docker-compose.yml up -d
+  sudo docker compose -f deploy/ubuntu-web/docker-compose.yml up -d
   echo "Ubuntu web stack is up."
 }
 
@@ -845,8 +847,8 @@ run_stop_web() {
   fi
 
   # Stop Docker Nginx
-  if command -v docker >/dev/null 2>&1 && docker ps -q -f name=abi-conspector-nginx 2>/dev/null | grep -q .; then
-    docker compose -f "$ROOT_DIR/deploy/ubuntu-web/docker-compose.yml" down
+  if command -v docker >/dev/null 2>&1 && sudo docker ps -q -f name=abi-conspector-nginx 2>/dev/null | grep -q .; then
+    sudo docker compose -f "$ROOT_DIR/deploy/ubuntu-web/docker-compose.yml" down
     echo "  Nginx container stopped."
   else
     echo "  Nginx container was not running."
@@ -873,7 +875,7 @@ run_status_web() {
   fi
 
   # Nginx
-  if command -v docker >/dev/null 2>&1 && docker ps -q -f name=abi-conspector-nginx 2>/dev/null | grep -q .; then
+  if command -v docker >/dev/null 2>&1 && sudo docker ps -q -f name=abi-conspector-nginx 2>/dev/null | grep -q .; then
     echo "  Nginx:    RUNNING (container abi-conspector-nginx)"
   else
     echo "  Nginx:    STOPPED"
