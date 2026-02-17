@@ -406,10 +406,29 @@ run_configure_env() {
   set_env_value "CONSPECTOR_WHISPER_MODEL" "$(read_prompt "Whisper label (metadata)" "$(get_env_value "CONSPECTOR_WHISPER_MODEL" "base")")"
 
   set_env_value "CONSPECTOR_CODEX_MODE" "real"
-  set_env_value "CONSPECTOR_CODEX_EFFORT" "$(pick_from_choices "Codex effort (low|medium|high)" "$(get_env_value "CONSPECTOR_CODEX_EFFORT" "medium")" "low" "medium" "high")"
-  set_env_value "CONSPECTOR_CODEX_TIMEOUT_SEC" "$(read_prompt "Codex timeout sec" "$(get_env_value "CONSPECTOR_CODEX_TIMEOUT_SEC" "600")")"
-  set_env_value "CONSPECTOR_CODEX_WORKDIR" "$(read_prompt "Codex workdir" "$(normalize_project_path_value "$(get_env_value "CONSPECTOR_CODEX_WORKDIR" "$ROOT_DIR")")")"
-  set_env_value "CONSPECTOR_CODEX_MODEL" "$(read_prompt "Codex model override (empty = default)" "$(get_env_value "CONSPECTOR_CODEX_MODEL" "")")"
+
+  local llm_provider_default
+  llm_provider_default="$(get_env_value "CONSPECTOR_LLM_PROVIDER" "codex")"
+  local llm_provider
+  llm_provider="$(pick_from_choices "LLM provider (codex|gemini)" "$llm_provider_default" "codex" "gemini")"
+  set_env_value "CONSPECTOR_LLM_PROVIDER" "$llm_provider"
+
+  if [[ "$llm_provider" == "codex" ]]; then
+    set_env_value "CONSPECTOR_CODEX_EFFORT" "$(pick_from_choices "Codex effort (low|medium|high)" "$(get_env_value "CONSPECTOR_CODEX_EFFORT" "medium")" "low" "medium" "high")"
+    set_env_value "CONSPECTOR_CODEX_TIMEOUT_SEC" "$(read_prompt "Codex timeout sec" "$(get_env_value "CONSPECTOR_CODEX_TIMEOUT_SEC" "600")")"
+    set_env_value "CONSPECTOR_CODEX_WORKDIR" "$(read_prompt "Codex workdir" "$(normalize_project_path_value "$(get_env_value "CONSPECTOR_CODEX_WORKDIR" "$ROOT_DIR")")")"
+    set_env_value "CONSPECTOR_CODEX_MODEL" "$(read_prompt "Codex model override (empty = default)" "$(get_env_value "CONSPECTOR_CODEX_MODEL" "")")"
+  fi
+
+  if [[ "$llm_provider" == "gemini" ]]; then
+    local gemini_mode_default
+    gemini_mode_default="$(get_env_value "CONSPECTOR_GEMINI_MODE" "real")"
+    set_env_value "CONSPECTOR_GEMINI_MODE" "$(pick_from_choices "Gemini mode (real|mock)" "$gemini_mode_default" "real" "mock")"
+    set_env_value "CONSPECTOR_GEMINI_TIMEOUT_SEC" "$(read_prompt "Gemini timeout sec" "$(get_env_value "CONSPECTOR_GEMINI_TIMEOUT_SEC" "600")")"
+    set_env_value "CONSPECTOR_GEMINI_WORKDIR" "$(read_prompt "Gemini workdir" "$(normalize_project_path_value "$(get_env_value "CONSPECTOR_GEMINI_WORKDIR" "$ROOT_DIR")")")"
+    set_env_value "CONSPECTOR_GEMINI_MODEL" "$(read_prompt "Gemini model (empty = default)" "$(get_env_value "CONSPECTOR_GEMINI_MODEL" "")")"
+    set_env_value "CONSPECTOR_GEMINI_SANDBOX" "$(pick_from_choices "Gemini sandbox (true|false)" "$(get_env_value "CONSPECTOR_GEMINI_SANDBOX" "false")" "true" "false")"
+  fi
 
   local notion_default='n'
   if [[ "$(get_env_value "CONSPECTOR_NOTION_MODE" "off")" == "real" ]]; then
@@ -448,40 +467,40 @@ run_setup_all() {
 
   # 1. Node.js
   ensure_node_runtime_if_needed "setup-all"
-  echo "[1/7] Node.js ready: $(node -v)"
+  echo "[1/8] Node.js ready: $(node -v)"
 
   # 2. npm install
   ensure_npm_deps
-  echo "[2/7] npm dependencies ready."
+  echo "[2/8] npm dependencies ready."
 
   # 3. Bootstrap (ffmpeg, whisper.cpp, model)
   scripts/bootstrap.sh
-  echo "[3/7] Bootstrap complete (ffmpeg, whisper.cpp, model)."
+  echo "[3/8] Bootstrap complete (ffmpeg, whisper.cpp, model)."
 
-  # 4. .env
-  ensure_env_file
-  echo "[4/7] .env file ready."
+  # 4. Configure .env (API keys wizard)
+  echo "[4/8] Configuring API keys and environment..."
+  run_configure_env
 
   # 5. Fix paths
   run_fix_env_paths "silent"
-  echo "[5/7] .env paths auto-fixed."
+  echo "[5/8] .env paths auto-fixed."
 
   # 6. Gemini skills
   if [[ -x "$ROOT_DIR/scripts/setup-gemini-skills.sh" ]]; then
     bash "$ROOT_DIR/scripts/setup-gemini-skills.sh"
-    echo "[6/7] Gemini CLI skills ready."
+    echo "[6/8] Gemini CLI skills ready."
   else
-    echo "[6/7] Gemini skills setup skipped (script not found)."
+    echo "[6/8] Gemini skills setup skipped (script not found)."
   fi
 
   # 7. Env doctor
-  echo "[7/7] Running env doctor..."
+  echo "[7/8] Running env doctor..."
   node scripts/env-doctor.js || true
 
+  # 8. Done
   echo
-  echo "Setup complete! Next steps:"
-  echo "  1) Edit .env — add CONSPECTOR_GROQ_API_KEY and choose CONSPECTOR_LLM_PROVIDER"
-  echo "  2) Run:  ./run.sh --web"
+  echo "[8/8] Setup complete!"
+  echo "  Run:  ./run.sh --web"
   echo
 }
 
