@@ -111,7 +111,8 @@ const webDbPath = process.env.CONSPECTOR_WEB_DB_PATH || path.join(dataRoot, 'web
 const conspectorDbPath = path.join(dataRoot, 'app.db');
 const publicDir = path.join(process.cwd(), 'web', 'public');
 const adminEmailAllowlist = parseAdminEmails();
-const sessionDays = Number.parseInt(process.env.CONSPECTOR_WEB_SESSION_DAYS || '30', 10);
+const parsedSessionDays = Number.parseInt(process.env.CONSPECTOR_WEB_SESSION_DAYS || '30', 10);
+const sessionDays = Number.isFinite(parsedSessionDays) && parsedSessionDays > 0 ? parsedSessionDays : 30;
 
 await fsp.mkdir(path.dirname(webDbPath), { recursive: true });
 const webDb = new DatabaseSync(webDbPath);
@@ -536,6 +537,23 @@ app.post('/api/admin/notion-writeback', requireAuth, requireAdmin, async (req, r
   }
 });
 
+app.use((error, _req, res, _next) => {
+  if (error instanceof ControlledError) {
+    res.status(400).json({ ok: false, error: asIpcError(error) });
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : 'Unknown web server error';
+  process.stderr.write(`[web] unhandled error: ${message}\n`);
+  res.status(500).json({
+    ok: false,
+    error: {
+      code: 'WEB_INTERNAL_ERROR',
+      message: 'Unexpected server error'
+    }
+  });
+});
+
 app.use(express.static(publicDir));
 app.get(/^\/(?!api\/).*/, (_req, res) => {
   res.sendFile(path.join(publicDir, 'index.html'));
@@ -547,4 +565,3 @@ app.listen(PORT, () => {
       `[web] platform=${process.platform}, dataRoot=${dataRoot}\n`
   );
 });
-

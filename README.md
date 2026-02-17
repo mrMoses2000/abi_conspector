@@ -24,6 +24,16 @@ Electron desktop app for lecture note processing:
 npm install
 ```
 
+## Full setup guide (RU)
+
+- `/Users/mosesvasilenko/abi_conspector/docs/SETUP_AND_KEYS_RU.md`
+- Includes:
+  - step-by-step setup
+  - where to get keys (Groq / Notion / Codex / HF legacy)
+  - troubleshooting
+  - test and preflight checklist
+  - data/log paths
+
 ## Unified launcher (`run.sh`)
 
 ```bash
