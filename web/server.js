@@ -667,23 +667,41 @@ app.get('/api/conspects', requireAuth, (_req, res) => {
 });
 
 app.get('/api/conspects/:recordingId/html', requireAuth, (req, res) => {
-  const recordingId = sanitizeRecordingId(req.params.recordingId);
-  const htmlPath = path.join(dataRoot, 'html', `${recordingId}.html`);
-  if (!fs.existsSync(htmlPath)) {
-    res.status(404).json({ error: 'NOT_FOUND', message: 'HTML result not found' });
-    return;
+  try {
+    const recordingId = sanitizeRecordingId(req.params.recordingId);
+    const htmlPath = path.resolve(dataRoot, 'html', `${recordingId}.html`);
+    if (!fs.existsSync(htmlPath)) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'HTML result not found' });
+    }
+    res.sendFile(htmlPath, (err) => {
+      if (err && !res.headersSent) {
+        res.status(500).json({ error: 'SEND_FAILED', message: `Failed to send HTML: ${err.message}` });
+      }
+    });
+  } catch (error) {
+    if (!res.headersSent) {
+      res.status(error.httpStatus || 500).json({ error: error.code || 'INTERNAL', message: error.message });
+    }
   }
-  res.sendFile(htmlPath);
 });
 
 app.get('/api/conspects/:recordingId/md', requireAuth, (req, res) => {
-  const recordingId = sanitizeRecordingId(req.params.recordingId);
-  const mdPath = path.join(dataRoot, 'merged', `${recordingId}.md`);
-  if (!fs.existsSync(mdPath)) {
-    res.status(404).json({ error: 'NOT_FOUND', message: 'Markdown result not found' });
-    return;
+  try {
+    const recordingId = sanitizeRecordingId(req.params.recordingId);
+    const mdPath = path.resolve(dataRoot, 'merged', `${recordingId}.md`);
+    if (!fs.existsSync(mdPath)) {
+      return res.status(404).json({ error: 'NOT_FOUND', message: 'Markdown result not found' });
+    }
+    res.type('text/markdown').sendFile(mdPath, (err) => {
+      if (err && !res.headersSent) {
+        res.status(500).json({ error: 'SEND_FAILED', message: `Failed to send MD: ${err.message}` });
+      }
+    });
+  } catch (error) {
+    if (!res.headersSent) {
+      res.status(error.httpStatus || 500).json({ error: error.code || 'INTERNAL', message: error.message });
+    }
   }
-  res.type('text/markdown').sendFile(mdPath);
 });
 
 app.get('/api/admin/users', requireAuth, requireAdmin, (_req, res) => {
