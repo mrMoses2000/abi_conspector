@@ -134,6 +134,9 @@ Web (аккаунты/роли):
 ./run.sh
 ```
 
+Для headless SSH-сервера по Codex CLI отдельно:
+- `/Users/mosesvasilenko/abi_conspector/docs/CODEX_CLI_SSH_SERVER_RU.md`
+
 ## 9. Где искать результат
 
 Папка данных:
