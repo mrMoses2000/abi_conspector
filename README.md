@@ -27,12 +27,15 @@ npm install
 ## Full setup guide (RU)
 
 - `/Users/mosesvasilenko/abi_conspector/docs/SETUP_AND_KEYS_RU.md`
+- `/Users/mosesvasilenko/abi_conspector/docs/RUNBOOK_FULL_RU.md`
+- `/Users/mosesvasilenko/abi_conspector/docs/CAUSAL_LOGIC_FULL_RU.md`
 - Includes:
   - step-by-step setup
   - where to get keys (Groq / Notion / Codex / HF legacy)
   - troubleshooting
   - test and preflight checklist
   - data/log paths
+  - detailed causal system logic
 
 ## Unified launcher (`run.sh`)
 
