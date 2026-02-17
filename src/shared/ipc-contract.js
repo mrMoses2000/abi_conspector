@@ -37,3 +37,22 @@ export const IPC_CHANNELS = {
  * @property {string} code
  * @property {string} message
  */
+
+/**
+ * @typedef {Object} NotionWritebackError
+ * @property {string} code
+ * @property {string} message
+ * @property {Record<string, any>=} details
+ */
+
+/**
+ * @typedef {Object} NotionWritebackResult
+ * @property {boolean} ok
+ * @property {string=} status
+ * @property {string=} warning
+ * @property {string=} pageId
+ * @property {number=} blocksWritten
+ * @property {string=} backupPath
+ * @property {string=} logPath
+ * @property {NotionWritebackError=} error
+ */

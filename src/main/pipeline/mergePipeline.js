@@ -83,7 +83,7 @@ export function createMergePipeline(deps) {
 
       await stage('stt_diarization', async () => {
         try {
-          await runSttDiarization({
+          const sttResult = await runSttDiarization({
             recording,
             normalizedAudioPath,
             transcriptPath,
@@ -104,6 +104,10 @@ export function createMergePipeline(deps) {
               });
             }
           });
+
+          if (sttResult?.warning) {
+            appendWarning(sttResult.warning);
+          }
         } catch (error) {
           const canFallback =
             runtimeConfig.resilience.sttFallbackToMock && runtimeConfig.stt.mode === 'real';

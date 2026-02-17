@@ -60,6 +60,23 @@ body {
   font-size: 14px;
 }
 
+.text-input {
+  border: 1px solid #d7e3fb;
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fff;
+  color: #1a2130;
+  font-size: 14px;
+  min-width: 280px;
+  flex: 1;
+  max-width: 520px;
+}
+
+.text-input:focus {
+  outline: 2px solid #c7dcff;
+  outline-offset: 0;
+}
+
 .btn {
   border: 0;
   border-radius: 10px;
@@ -109,6 +126,12 @@ body {
   background: #fff0f0;
   border-color: #ffcccc;
   color: #7e2020;
+}
+
+.status.warning {
+  background: #fff9ec;
+  border-color: #ffdca8;
+  color: #704c13;
 }
 
 .progress-wrap {

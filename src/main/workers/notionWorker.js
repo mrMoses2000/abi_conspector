@@ -83,6 +83,57 @@ function uniqueStrings(values) {
   return out;
 }
 
+function suggestionSortScore(title, targetNormalized) {
+  const normalized = normalizeTitle(title);
+  if (!targetNormalized) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  if (normalized === targetNormalized) {
+    return 0;
+  }
+  if (normalized.includes(targetNormalized)) {
+    return 1;
+  }
+  if (targetNormalized.includes(normalized)) {
+    return 2;
+  }
+
+  const targetTokens = targetNormalized.split(' ');
+  const overlap = targetTokens.filter((token) => normalized.includes(token)).length;
+  if (overlap > 0) {
+    return 3 + (targetTokens.length - overlap);
+  }
+
+  return 1000 + Math.abs(normalized.length - targetNormalized.length);
+}
+
+function buildPageSuggestions(pages, title, limit = 12) {
+  const normalizedTitle = normalizeTitle(title);
+  if (!Array.isArray(pages) || pages.length === 0) {
+    return [];
+  }
+
+  const suggestions = pages
+    .map((page) => ({
+      id: page.id,
+      title: page.title,
+      score: suggestionSortScore(page.title, normalizedTitle)
+    }))
+    .sort((a, b) => a.score - b.score || a.title.localeCompare(b.title, 'ru'))
+    .slice(0, limit)
+    .map(({ id, title: value }) => ({ id, title: value }));
+
+  const seen = new Set();
+  return suggestions.filter((item) => {
+    const key = `${item.id}:${item.title}`;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 function recordingNameCandidates(recording) {
   const fileName = String(recording?.original_file_name || '').trim();
   if (!fileName) {
@@ -209,14 +260,15 @@ async function resolvePageId(client, pageId, title, rootPageId, recording) {
     if (match) {
       return match.id;
     }
-
-    const preview = nestedPages
-      .slice(0, 12)
-      .map((page) => page.title)
-      .join(', ');
+    const suggestions = buildPageSuggestions(nestedPages, normalizedTitle, 12);
     throw new ControlledError(
       'NOTION_PAGE_NOT_FOUND_IN_ROOT',
-      `Page "${normalizedTitle}" not found under configured root page. Available: ${preview || 'none'}`
+      `Page "${normalizedTitle}" not found under configured root page.`,
+      {
+        requestedTitle: normalizedTitle,
+        rootPageId: scopedRootId,
+        suggestions
+      }
     );
   }
 
@@ -235,7 +287,11 @@ async function resolvePageId(client, pageId, title, rootPageId, recording) {
   if (!normalizedTitle) {
     throw new ControlledError(
       'NOTION_TARGET_MISSING',
-      'Set CONSPECTOR_NOTION_PAGE_ID or CONSPECTOR_NOTION_PAGE_TITLE. For nested pages, set CONSPECTOR_NOTION_ROOT_PAGE_ID and pass page title in UI.'
+      'Set CONSPECTOR_NOTION_PAGE_ID or CONSPECTOR_NOTION_PAGE_TITLE. For nested pages, set CONSPECTOR_NOTION_ROOT_PAGE_ID and pass page title in UI.',
+      {
+        requestedTitle: normalizedTitle,
+        rootPageId: normalizedRootPageId || undefined
+      }
     );
   }
 
@@ -250,20 +306,29 @@ async function resolvePageId(client, pageId, title, rootPageId, recording) {
     })
   );
 
-  const exact = search.results.find((item) => {
-    if (item.object !== 'page') {
-      return false;
-    }
-    const titleProp = item.properties?.title;
-    if (!titleProp || titleProp.type !== 'title') {
-      return false;
-    }
-    const text = titleProp.title.map((node) => node.plain_text).join('').trim();
-    return text === normalizedTitle;
-  });
+  const searchPages = search.results
+    .filter((item) => item.object === 'page')
+    .map((item) => {
+      const titleProp = item.properties?.title;
+      if (!titleProp || titleProp.type !== 'title') {
+        return null;
+      }
+      const value = titleProp.title.map((node) => node.plain_text).join('').trim();
+      if (!value) {
+        return null;
+      }
+      return { id: item.id, title: value };
+    })
+    .filter(Boolean);
 
-  if (!exact || exact.object !== 'page') {
-    throw new ControlledError('NOTION_PAGE_NOT_FOUND', `Notion page not found by title: ${normalizedTitle}`);
+  const exact = searchPages.find((item) => item.title === normalizedTitle);
+
+  if (!exact || !exact.id) {
+    const suggestions = buildPageSuggestions(searchPages, normalizedTitle, 10);
+    throw new ControlledError('NOTION_PAGE_NOT_FOUND', `Notion page not found by title: ${normalizedTitle}`, {
+      requestedTitle: normalizedTitle,
+      suggestions
+    });
   }
 
   return exact.id;
@@ -535,85 +600,112 @@ function normalizeNotionCodeLang(lang) {
  */
 export async function writeMergedToNotion(payload) {
   const { mergedPath, recording, backupsDir, notionConfig, codexConfig } = payload;
-
-  if (notionConfig.mode !== 'real') {
-    return { status: 'skipped', warning: 'Notion writeback is disabled (CONSPECTOR_NOTION_MODE=off).' };
-  }
-
-  if (!notionConfig.token) {
-    return { status: 'skipped', warning: 'NOTION_TOKEN is missing. Writeback skipped.' };
-  }
-
-  const client = new Client({ auth: notionConfig.token });
-  const pageId = await resolvePageId(
-    client,
-    notionConfig.pageId,
-    notionConfig.pageTitle,
-    notionConfig.rootPageId || '',
-    recording
-  );
-
-  const oldBlocks = await listAllChildren(client, pageId);
-  const oldMarkdown = notionBlocksToMarkdown(oldBlocks);
   await fs.mkdir(backupsDir, { recursive: true });
-
-  const backupPath = path.join(backupsDir, `${recording.id}_notion_backup.json`);
-  await fs.writeFile(
-    backupPath,
-    JSON.stringify(
-      {
-        pageId,
-        recordingId: recording.id,
-        capturedAt: new Date().toISOString(),
-        oldBlocks
-      },
-      null,
-      2
-    ),
-    'utf8'
-  );
-
-  let finalMarkdown = await fs.readFile(mergedPath, 'utf8');
-  let warning = '';
-
-  if (notionConfig.mergeWithExisting && oldMarkdown.trim() && codexConfig) {
-    const mergedFromNotionPath = path.join(backupsDir, `${recording.id}_merged_with_notion.md`);
-    try {
-      await runCodexMergeFromMarkdown({
-        structuredMarkdown: finalMarkdown,
-        baseMarkdown: oldMarkdown,
-        outputPath: mergedFromNotionPath,
-        recording,
-        codexConfig
-      });
-      finalMarkdown = await fs.readFile(mergedFromNotionPath, 'utf8');
-    } catch (error) {
-      warning = `Notion merge-with-existing skipped: ${error instanceof Error ? error.message : 'unknown error'}`;
-    }
-  } else if (notionConfig.mergeWithExisting && oldMarkdown.trim() && !codexConfig) {
-    warning = 'Notion merge-with-existing requested but codex config is missing.';
-  }
-
-  for (const block of oldBlocks) {
-    await withRetries(() => client.blocks.delete({ block_id: block.id }));
-  }
-
-  const blocks = markdownToNotionBlocks(finalMarkdown);
-
-  if (blocks.length === 0) {
-    throw new ControlledError('NOTION_EMPTY_MERGE', 'Merged markdown could not be converted to Notion blocks');
-  }
-
-  for (let i = 0; i < blocks.length; i += APPEND_CHUNK_SIZE) {
-    const children = blocks.slice(i, i + APPEND_CHUNK_SIZE);
-    await withRetries(() => client.blocks.children.append({ block_id: pageId, children }));
-  }
-
-  return {
-    status: 'written',
-    pageId,
-    backupPath,
-    blocksWritten: blocks.length,
-    warning: warning || undefined
+  const notionLogPath = path.join(backupsDir, `${recording.id}.notion.log`);
+  const logs = [];
+  const log = (message) => {
+    logs.push(`[${new Date().toISOString()}] ${message}`);
   };
+  const flushLog = async () => {
+    await fs.writeFile(notionLogPath, `${logs.join('\n')}\n`, 'utf8').catch(() => {});
+  };
+
+  try {
+    if (notionConfig.mode !== 'real') {
+      log('skip: mode=off');
+      return {
+        status: 'skipped',
+        warning: 'Notion writeback is disabled (CONSPECTOR_NOTION_MODE=off).',
+        logPath: notionLogPath
+      };
+    }
+
+    if (!notionConfig.token) {
+      log('skip: token missing');
+      return { status: 'skipped', warning: 'NOTION_TOKEN is missing. Writeback skipped.', logPath: notionLogPath };
+    }
+
+    const client = new Client({ auth: notionConfig.token });
+    const pageId = await resolvePageId(
+      client,
+      notionConfig.pageId,
+      notionConfig.pageTitle,
+      notionConfig.rootPageId || '',
+      recording
+    );
+    log(`target page resolved: ${pageId}`);
+
+    const oldBlocks = await listAllChildren(client, pageId);
+    const oldMarkdown = notionBlocksToMarkdown(oldBlocks);
+    log(`old blocks loaded: ${oldBlocks.length}`);
+
+    const backupPath = path.join(backupsDir, `${recording.id}_notion_backup.json`);
+    await fs.writeFile(
+      backupPath,
+      JSON.stringify(
+        {
+          pageId,
+          recordingId: recording.id,
+          capturedAt: new Date().toISOString(),
+          oldBlocks
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+    log(`backup created: ${backupPath}`);
+
+    let finalMarkdown = await fs.readFile(mergedPath, 'utf8');
+    let warning = '';
+
+    if (notionConfig.mergeWithExisting && oldMarkdown.trim() && codexConfig) {
+      const mergedFromNotionPath = path.join(backupsDir, `${recording.id}_merged_with_notion.md`);
+      try {
+        await runCodexMergeFromMarkdown({
+          structuredMarkdown: finalMarkdown,
+          baseMarkdown: oldMarkdown,
+          outputPath: mergedFromNotionPath,
+          recording,
+          codexConfig
+        });
+        finalMarkdown = await fs.readFile(mergedFromNotionPath, 'utf8');
+        log(`merge-with-existing done: ${mergedFromNotionPath}`);
+      } catch (error) {
+        warning = `Notion merge-with-existing skipped: ${error instanceof Error ? error.message : 'unknown error'}`;
+        log(`merge-with-existing warning: ${warning}`);
+      }
+    } else if (notionConfig.mergeWithExisting && oldMarkdown.trim() && !codexConfig) {
+      warning = 'Notion merge-with-existing requested but codex config is missing.';
+      log(`merge-with-existing warning: ${warning}`);
+    }
+
+    for (const block of oldBlocks) {
+      await withRetries(() => client.blocks.delete({ block_id: block.id }));
+    }
+    log(`deleted old blocks: ${oldBlocks.length}`);
+
+    const blocks = markdownToNotionBlocks(finalMarkdown);
+
+    if (blocks.length === 0) {
+      throw new ControlledError('NOTION_EMPTY_MERGE', 'Merged markdown could not be converted to Notion blocks');
+    }
+
+    for (let i = 0; i < blocks.length; i += APPEND_CHUNK_SIZE) {
+      const children = blocks.slice(i, i + APPEND_CHUNK_SIZE);
+      await withRetries(() => client.blocks.children.append({ block_id: pageId, children }));
+    }
+    log(`written blocks: ${blocks.length}`);
+
+    return {
+      status: 'written',
+      pageId,
+      backupPath,
+      logPath: notionLogPath,
+      blocksWritten: blocks.length,
+      warning: warning || undefined
+    };
+  } finally {
+    await flushLog();
+  }
 }

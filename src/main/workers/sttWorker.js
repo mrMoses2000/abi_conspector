@@ -1,15 +1,16 @@
 import fs from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
-import path from 'node:path';
 import { ControlledError } from '../utils/errors.js';
-import { runCommand } from '../utils/process.js';
+import { runGroqChunkedTranscription } from './sttGroqChunkedWorker.js';
+import { runWhisperCppTranscription } from './sttWhisperCppWorker.js';
 
 function buildMockTranscript(recording, language) {
   return {
     recordingId: recording.id,
     language,
     model: 'mock',
-    diarization: true,
+    diarization: false,
+    sttEngine: 'mock',
     segments: [
       {
         startSec: 0,
@@ -34,38 +35,42 @@ export async function writeMockTranscript(payload) {
   return transcript;
 }
 
-function parseProgressLine(line) {
-  const match = String(line).trim().match(/^STT_PROGRESS\s+(\d{1,3})(?:\s+(.*))?$/i);
-  if (!match) {
-    return null;
+function normalizeEngine(value, fallback) {
+  const normalized = String(value || '').trim().toLowerCase();
+  if (normalized === 'groq' || normalized === 'whispercpp' || normalized === 'none') {
+    return normalized;
   }
-  const percent = Number.parseInt(match[1], 10);
-  if (!Number.isFinite(percent)) {
-    return null;
+  return fallback;
+}
+
+function buildEngineRunner(engine) {
+  if (engine === 'groq') {
+    return runGroqChunkedTranscription;
   }
-  return {
-    percent: Math.max(0, Math.min(100, percent)),
-    message: (match[2] || '').trim()
-  };
+  if (engine === 'whispercpp') {
+    return runWhisperCppTranscription;
+  }
+  return null;
 }
 
 /**
  * @param {{
  *   recording: any;
-  *   normalizedAudioPath: string;
-  *   transcriptPath: string;
+ *   normalizedAudioPath: string;
+ *   transcriptPath: string;
  *   sttConfig: {
  *     mode: 'real' | 'mock';
- *     pythonBin: string;
- *     scriptPath: string;
- *     model: string;
  *     language: string;
- *     device: string;
- *     computeType: string;
- *     batchSize: number;
- *     hfToken: string;
- *     requireDiarization: boolean;
  *     timeoutMs: number;
+ *     primary: 'groq' | 'whispercpp';
+ *     fallback: 'whispercpp' | 'none';
+ *     groqApiKey: string;
+ *     groqModel: string;
+ *     groqMaxFileMb: number;
+ *     groqChunkMinutes: number;
+ *     whisperCppBin: string;
+ *     whisperCppModelPath: string;
+ *     whisperCppThreads: number;
  *   };
  *   onProgress?: (payload: { percent: number; message: string; logPath: string; }) => void;
  * }} payload
@@ -82,33 +87,10 @@ export async function runSttDiarization(payload) {
     });
   }
 
-  const scriptPath = path.resolve(sttConfig.scriptPath);
-  const args = [
-    scriptPath,
-    '--input',
-    normalizedAudioPath,
-    '--output',
-    transcriptPath,
-    '--recording-id',
-    recording.id,
-    '--model',
-    sttConfig.model,
-    '--language',
-    sttConfig.language,
-    '--device',
-    sttConfig.device,
-    '--compute-type',
-    sttConfig.computeType,
-    '--batch-size',
-    String(sttConfig.batchSize)
-  ];
-
-  if (sttConfig.requireDiarization) {
-    args.push('--require-diarization');
-  }
+  const primary = normalizeEngine(sttConfig.primary, 'groq');
+  const fallback = normalizeEngine(sttConfig.fallback, 'whispercpp');
 
   const logStream = createWriteStream(logPath, { flags: 'a', encoding: 'utf8' });
-  let stderrBuffer = '';
   const emitProgress = (percent, message) => {
     if (typeof onProgress === 'function') {
       onProgress({ percent, message, logPath });
@@ -118,46 +100,53 @@ export async function runSttDiarization(payload) {
     logStream.write(`[${new Date().toISOString()}][${streamName}] ${text}`);
   };
 
-  writeLog(
-    'meta',
-    `start model=${sttConfig.model} device=${sttConfig.device} compute=${sttConfig.computeType} batch=${sttConfig.batchSize}\n`
-  );
-  emitProgress(20, 'Загрузка модели STT');
+  const executeEngine = async (engine) => {
+    const runner = buildEngineRunner(engine);
+    if (!runner) {
+      throw new ControlledError('STT_ENGINE_UNKNOWN', `Unsupported STT engine: ${engine}`);
+    }
+
+    writeLog('meta', `engine=${engine} start timeoutMs=${sttConfig.timeoutMs}\n`);
+    const result = await runner({
+      inputPath: normalizedAudioPath,
+      transcriptPath,
+      recordingId: recording.id,
+      sttConfig,
+      onProgress: ({ percent, message }) => emitProgress(percent, message || engine),
+      onLog: writeLog
+    });
+    writeLog('meta', `engine=${engine} done segments=${Array.isArray(result?.segments) ? result.segments.length : 0}\n`);
+    return result;
+  };
+
+  emitProgress(20, `stt_engine_${primary}_start`);
+  let fallbackWarning = '';
 
   try {
-    await runCommand({
-      command: sttConfig.pythonBin,
-      args,
-      timeoutMs: sttConfig.timeoutMs,
-      env: {
-        ...process.env,
-        HUGGINGFACE_TOKEN: sttConfig.hfToken || process.env.HUGGINGFACE_TOKEN || ''
-      },
-      onStdout: (chunk) => writeLog('stdout', chunk),
-      onStderr: (chunk) => {
-        writeLog('stderr', chunk);
-        stderrBuffer += chunk;
-        const lines = stderrBuffer.split('\n');
-        stderrBuffer = lines.pop() || '';
-        for (const line of lines) {
-          const parsed = parseProgressLine(line);
-          if (!parsed) {
-            continue;
-          }
-          emitProgress(parsed.percent, parsed.message || 'Обработка STT');
-        }
+    try {
+      const transcript = await executeEngine(primary);
+      emitProgress(100, 'Транскрибация завершена');
+      return transcript;
+    } catch (primaryError) {
+      const primaryText = primaryError instanceof Error ? primaryError.message : String(primaryError);
+      writeLog('meta', `engine=${primary} failed: ${primaryText}\n`);
+
+      const shouldFallback = fallback !== 'none' && fallback !== primary;
+      if (!shouldFallback) {
+        throw primaryError;
       }
-    });
+
+      fallbackWarning = `stt ${primary} failed, fallback to ${fallback}: ${primaryText}`;
+      emitProgress(34, `stt_fallback_${fallback}`);
+      const transcript = await executeEngine(fallback);
+      transcript.warning = fallbackWarning;
+      emitProgress(100, 'Транскрибация завершена (fallback)');
+      return transcript;
+    }
   } catch (error) {
-    writeLog(
-      'meta',
-      `failed ${error instanceof Error ? error.message : 'unknown error'}\n`
-    );
+    writeLog('meta', `failed ${error instanceof Error ? error.message : 'unknown error'}\n`);
     if (error instanceof ControlledError) {
-      throw new ControlledError(
-        'STT_DIARIZATION_FAILED',
-        `${error.message}. Лог: ${logPath}`
-      );
+      throw new ControlledError('STT_DIARIZATION_FAILED', `${error.message}. Лог: ${logPath}`);
     }
     throw error;
   } finally {
@@ -165,23 +154,5 @@ export async function runSttDiarization(payload) {
       logStream.end(resolve);
     });
   }
-
-  const raw = await fs.readFile(transcriptPath, 'utf8').catch(() => null);
-  if (!raw) {
-    throw new ControlledError('TRANSCRIPT_NOT_CREATED', 'STT worker did not create transcript file');
-  }
-
-  let transcript;
-  try {
-    transcript = JSON.parse(raw);
-  } catch {
-    throw new ControlledError('TRANSCRIPT_PARSE_FAILED', 'Transcript JSON is invalid');
-  }
-
-  if (!Array.isArray(transcript.segments) || transcript.segments.length === 0) {
-    throw new ControlledError('TRANSCRIPT_EMPTY', 'Transcript has no segments');
-  }
-
-  emitProgress(100, 'Транскрибация завершена');
-  return transcript;
 }
+

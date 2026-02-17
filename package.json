@@ -5,6 +5,7 @@
   "main": "src/main/index.js",
   "type": "module",
   "scripts": {
+    "bootstrap": "scripts/bootstrap.sh",
     "dev": "electron .",
     "start": "electron .",
     "preflight": "node -r dotenv/config scripts/preflight.js",

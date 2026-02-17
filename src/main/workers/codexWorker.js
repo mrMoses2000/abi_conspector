@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
 import path from 'node:path';
 import { ControlledError } from '../utils/errors.js';
 import { runCommand } from '../utils/process.js';
@@ -71,23 +72,37 @@ async function runCodex(config, outputPath, prompt) {
       '```'
     ].join('\n');
     await fs.writeFile(outputPath, mockMarkdown, 'utf8');
+    await fs.writeFile(`${outputPath}.codex.log`, '[mock] codex worker disabled\n', 'utf8');
     return;
   }
 
   const args = buildCodexExecArgs(config, outputPath);
+  const logPath = `${outputPath}.codex.log`;
+  const logStream = createWriteStream(logPath, { flags: 'a', encoding: 'utf8' });
+  const writeLog = (streamName, chunk) => {
+    logStream.write(`[${new Date().toISOString()}][${streamName}] ${chunk}`);
+  };
+  writeLog('meta', `start model=${config.model || '(default)'} effort=${normalizeReasoningEffort(config.reasoningEffort)}\n`);
 
   try {
     await runCommand({
       command: 'codex',
       args,
       stdin: prompt,
-      timeoutMs: config.timeoutMs
+      timeoutMs: config.timeoutMs,
+      onStdout: (chunk) => writeLog('stdout', chunk),
+      onStderr: (chunk) => writeLog('stderr', chunk)
     });
   } catch (error) {
+    writeLog('meta', `failed ${error instanceof Error ? error.message : 'unknown error'}\n`);
     if (error instanceof ControlledError) {
-      throw new ControlledError('CODEX_EXEC_FAILED', error.message);
+      throw new ControlledError('CODEX_EXEC_FAILED', `${error.message}. Лог: ${logPath}`);
     }
     throw error;
+  } finally {
+    await new Promise((resolve) => {
+      logStream.end(resolve);
+    });
   }
 
   const text = await fs.readFile(outputPath, 'utf8').catch(() => '');

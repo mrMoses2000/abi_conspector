@@ -2,11 +2,15 @@ export class ControlledError extends Error {
   /**
    * @param {string} code
    * @param {string} message
+   * @param {Record<string, any> | undefined} details
    */
-  constructor(code, message) {
+  constructor(code, message, details = undefined) {
     super(message);
     this.name = 'ControlledError';
     this.code = code;
+    if (details && typeof details === 'object') {
+      this.details = details;
+    }
   }
 }
 
@@ -15,7 +19,7 @@ export class ControlledError extends Error {
  */
 export function asIpcError(err) {
   if (err instanceof ControlledError) {
-    return { code: err.code, message: err.message };
+    return { code: err.code, message: err.message, details: err.details };
   }
 
   if (err instanceof Error) {

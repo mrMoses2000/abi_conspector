@@ -38,15 +38,21 @@ function checkBinary(name, required, args = ['--version']) {
 }
 
 const sttMode = process.env.CONSPECTOR_STT_MODE === 'mock' ? 'mock' : 'real';
+const sttPrimary = ['groq', 'whispercpp'].includes(String(process.env.CONSPECTOR_STT_PRIMARY || '').toLowerCase())
+  ? String(process.env.CONSPECTOR_STT_PRIMARY || '').toLowerCase()
+  : 'groq';
+const sttFallback = ['whispercpp', 'none'].includes(String(process.env.CONSPECTOR_STT_FALLBACK || '').toLowerCase())
+  ? String(process.env.CONSPECTOR_STT_FALLBACK || '').toLowerCase()
+  : 'whispercpp';
 const codexMode = process.env.CONSPECTOR_CODEX_MODE === 'mock' ? 'mock' : 'real';
 const notionMode = process.env.CONSPECTOR_NOTION_MODE === 'real' ? 'real' : 'off';
-const sttPython = process.env.CONSPECTOR_STT_PYTHON || 'python3';
+const groqApiKey = process.env.CONSPECTOR_GROQ_API_KEY || process.env.GROQ_API_KEY || '';
+const whisperCppBin = process.env.CONSPECTOR_WHISPERCPP_BIN || 'whisper-cli';
+const whisperCppModelPath =
+  process.env.CONSPECTOR_WHISPERCPP_MODEL_PATH || path.join(process.cwd(), 'models', 'ggml-base.bin');
 const strict = process.env.CONSPECTOR_PREFLIGHT_STRICT
   ? !['0', 'false', 'no', 'off'].includes(String(process.env.CONSPECTOR_PREFLIGHT_STRICT).toLowerCase())
   : false;
-const requireDiarization = process.env.CONSPECTOR_REQUIRE_DIARIZATION
-  ? !['0', 'false', 'no', 'off'].includes(String(process.env.CONSPECTOR_REQUIRE_DIARIZATION).toLowerCase())
-  : true;
 
 const [major] = process.versions.node.split('.').map(Number);
 if (!Number.isFinite(major) || major < 24) {
@@ -70,25 +76,25 @@ ok = checkBinary('ffmpeg', strict, ['-version']) && ok;
 ok = checkBinary('ffprobe', strict, ['-version']) && ok;
 
 if (sttMode === 'real') {
-  const scriptPath = process.env.CONSPECTOR_STT_SCRIPT || path.join(process.cwd(), 'scripts', 'run_stt_diarization.py');
-  if (!fs.existsSync(scriptPath)) {
-    markIssue(`STT script not found: ${scriptPath}`);
-  } else {
-    pass(`STT script found: ${scriptPath}`);
+  pass(`STT primary=${sttPrimary}, fallback=${sttFallback}`);
+
+  const requiresGroq = sttPrimary === 'groq';
+  if (requiresGroq) {
+    if (!groqApiKey) {
+      markIssue('CONSPECTOR_GROQ_API_KEY (or GROQ_API_KEY) is required for CONSPECTOR_STT_PRIMARY=groq');
+    } else {
+      pass('Groq API key is set');
+    }
   }
 
-  ok = checkBinary(sttPython, strict, ['--version']) && ok;
-  const pyCheck = run(sttPython, ['-c', 'import whisperx; import torch; print("ok")']);
-  if (pyCheck.error || pyCheck.status !== 0) {
-    markIssue('python deps missing: whisperx/torch are required for CONSPECTOR_STT_MODE=real');
-  } else {
-    pass('python deps: whisperx + torch detected');
-  }
-
-  if (requireDiarization && !process.env.HUGGINGFACE_TOKEN) {
-    markIssue('HUGGINGFACE_TOKEN is required when diarization is enabled');
-  } else if (requireDiarization) {
-    pass('HUGGINGFACE_TOKEN is set');
+  const requiresWhisperCpp = sttPrimary === 'whispercpp' || sttFallback === 'whispercpp';
+  if (requiresWhisperCpp) {
+    ok = checkBinary(whisperCppBin, strict, ['--help']) && ok;
+    if (!fs.existsSync(whisperCppModelPath)) {
+      markIssue(`whisper.cpp model not found: ${whisperCppModelPath}`);
+    } else {
+      pass(`whisper.cpp model found: ${whisperCppModelPath}`);
+    }
   }
 } else {
   warn('CONSPECTOR_STT_MODE=mock, real STT worker is disabled');

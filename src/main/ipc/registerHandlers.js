@@ -188,7 +188,12 @@ export function registerIpcHandlers(deps) {
       throw new ControlledError('INVALID_RECORDING_ID', 'recordingId is required');
     }
 
-    return writebackNotion({ recordingId, pageTitle });
+    try {
+      const result = await writebackNotion({ recordingId, pageTitle });
+      return { ok: true, ...result };
+    } catch (error) {
+      return { ok: false, error: asIpcError(error) };
+    }
   });
 
   const forward = (channel) => {

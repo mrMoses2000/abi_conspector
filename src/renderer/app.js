@@ -9,6 +9,7 @@ const openMdBtn = document.getElementById('open-md-btn');
 const retryJobBtn = document.getElementById('retry-job-btn');
 const writebackNotionBtn = document.getElementById('writeback-notion-btn');
 const cleanupFailedBtn = document.getElementById('cleanup-failed-btn');
+const notionPageTitleInput = document.getElementById('notion-page-title-input');
 const codexEffortSelect = document.getElementById('codex-effort-select');
 const codexSettingsStatus = document.getElementById('codex-settings-status');
 const recorderStatus = document.getElementById('recorder-status');
@@ -136,9 +137,12 @@ function estimateRunningPercent(selected) {
   return Math.floor(minP + (maxP - minP) * ratio);
 }
 
-function setImportStatus(text, isError = false) {
+function setImportStatus(text, kind = false) {
+  const isError = kind === true || kind === 'error';
+  const isWarning = kind === 'warning';
   importStatus.textContent = text;
   importStatus.classList.toggle('error', isError);
+  importStatus.classList.toggle('warning', !isError && isWarning);
 }
 
 function setCodexStatus(text, isError = false) {
@@ -203,9 +207,10 @@ function setSelectedJobInfo() {
     selected.error_message
       ? `${selected.error_code || 'ERROR'}: ${selected.error_message}`
       : selected.warning || 'без warning';
+  const mockFallbackText = hasMockFallback(selected) ? ' | mock fallback used' : '';
 
   selectedJobInfo.textContent =
-    `Выбрано: ${selected.id} | status=${selected.status} | stage=${selected.stage} | ${warningOrError}`;
+    `Выбрано: ${selected.id} | status=${selected.status} | stage=${selected.stage}${mockFallbackText} | ${warningOrError}`;
 }
 
 function setProgressForSelectedJob() {
@@ -290,7 +295,10 @@ function updateActionButtons() {
   }
 
   if (selected.status === 'done') {
-    actionHint.textContent = 'Подсказка: задача готова, можно открыть HTML/MD и отправить в Notion.';
+    actionHint.textContent =
+      hasMockFallback(selected)
+        ? 'Подсказка: задача завершена через mock fallback. Проверьте warning и запустите повтор после настройки STT.'
+        : 'Подсказка: задача готова, можно открыть HTML/MD и отправить в Notion.';
     return;
   }
 
@@ -301,6 +309,22 @@ function updateActionButtons() {
 
   actionHint.textContent =
     'Подсказка: результаты открываются после `done`. Сейчас задача ещё обрабатывается.';
+}
+
+function hasMockFallback(row) {
+  const text = String(row?.warning || '').toLowerCase();
+  return text.includes('fallback to mock transcript') || text.includes('mock stt result');
+}
+
+function extractNotionSuggestions(errorDetails) {
+  if (!errorDetails || typeof errorDetails !== 'object') {
+    return [];
+  }
+  const source = Array.isArray(errorDetails.suggestions) ? errorDetails.suggestions : [];
+  return source
+    .map((item) => (typeof item?.title === 'string' ? item.title.trim() : ''))
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 function renderJobs(rows) {
@@ -333,7 +357,9 @@ function renderJobs(rows) {
 
     const issueText = row.error_message
       ? `${row.error_code || 'ERROR'}: ${row.error_message}`
-      : row.warning || '—';
+      : hasMockFallback(row)
+        ? `mock fallback used${row.warning ? `; ${row.warning}` : ''}`
+        : row.warning || '—';
 
     tr.innerHTML = `
       <td><input type="radio" name="selected-job" ${row.id === selectedJobId ? 'checked' : ''} /></td>
@@ -481,23 +507,39 @@ writebackNotionBtn.addEventListener('click', () => {
       throw new Error('Сначала выберите задачу');
     }
 
-    const pageTitle = window.prompt(
-      'Введите точное название страницы/подстраницы Notion (если пусто, возьмём значение из .env):',
-      ''
-    );
-
-    if (pageTitle === null) {
-      setImportStatus('Отправка в Notion отменена');
+    const pageTitle = String(notionPageTitleInput?.value || '').trim();
+    if (!pageTitle) {
+      setImportStatus('Введите название подстраницы Notion в поле над кнопками.', 'error');
       return;
     }
 
-    const result = await api.writebackNotion(selected.recording_id, pageTitle || '');
+    const result = await api.writebackNotion(selected.recording_id, pageTitle);
+    if (!result?.ok) {
+      const error = result?.error || {};
+      const code = error.code || 'NOTION_WRITEBACK_FAILED';
+      const message = error.message || 'unknown error';
+      const suggestions = extractNotionSuggestions(error.details);
+      if (suggestions.length > 0) {
+        setImportStatus(
+          `Notion ошибка [${code}]: ${message}. Возможные страницы: ${suggestions.join(', ')}`,
+          'error'
+        );
+      } else {
+        setImportStatus(`Notion ошибка [${code}]: ${message}`, 'error');
+      }
+      return;
+    }
+
     if (result?.warning) {
-      setImportStatus(`Notion: ${result.warning}`);
+      const logFile = typeof result.logPath === 'string' ? result.logPath.split(/[\\/]/).pop() : '';
+      setImportStatus(`Notion: ${result.warning}${logFile ? ` (лог: ${logFile})` : ''}`, 'warning');
       return;
     }
 
-    setImportStatus(`Notion: записано ${result?.blocksWritten ?? 0} блоков`);
+    const logFile = typeof result.logPath === 'string' ? result.logPath.split(/[\\/]/).pop() : '';
+    setImportStatus(
+      `Notion: записано ${result?.blocksWritten ?? 0} блоков${logFile ? ` (лог: ${logFile})` : ''}`
+    );
   });
 });
 

@@ -176,10 +176,18 @@ if (gotSingleInstanceLock) {
         throw new ControlledError('MERGED_NOTE_NOT_FOUND', `Merged markdown not found: ${mergedPath}`);
       });
 
+      const requestedPageTitle = typeof pageTitle === 'string' ? pageTitle.trim() : '';
+      if (!requestedPageTitle) {
+        throw new ControlledError(
+          'NOTION_PAGE_TITLE_REQUIRED',
+          'Введите название подстраницы Notion в интерфейсе перед отправкой.'
+        );
+      }
+
       const notionConfig = {
         ...config.notion,
         mode: 'real',
-        pageTitle: typeof pageTitle === 'string' && pageTitle.trim() ? pageTitle.trim() : config.notion.pageTitle
+        pageTitle: requestedPageTitle
       };
 
     return writeMergedToNotion({

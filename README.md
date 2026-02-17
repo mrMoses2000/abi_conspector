@@ -1,24 +1,22 @@
-# ABI Conspector (Desktop MVP)
+# ABI Conspector (Desktop MVP v3)
 
-Electron desktop app with real worker pipeline:
+Electron desktop app for lecture note processing:
 
-1. `normalize_audio` (ffmpeg)
-2. `stt_diarization` (Python `whisperx` + diarization)
+1. `normalize_audio` (ffmpeg -> flac mono 16k)
+2. `stt_diarization` (STT v2: `Groq chunking` primary + `whisper.cpp` fallback)
 3. `codex_structure` (`codex exec`)
 4. `merge` (`codex exec`)
-5. `render_html` (markdown -> styled HTML)
-6. `notion_writeback` (Notion API, optional)
-
-The app is configured for fail-safe behavior by default: if STT/Codex real workers fail, pipeline falls back to mock workers and completes with warnings instead of crashing.
+5. `render_html`
+6. `notion_writeback` (optional)
 
 ## Desktop controls
 
-- `Начать запись` / `Стоп` - real microphone capture via ffmpeg (saved and queued automatically).
-- `Добавить аудио файл` - import local audio/video to the same queue.
-- `Профиль Codex (low|medium|high)` - GUI switch for runtime `model_reasoning_effort`.
-- `Открыть папку данных` - opens managed storage (`audio/transcripts/merged/html`).
-- Job actions (for selected row): `Открыть HTML`, `Открыть merged.md`, `Повторить задачу`, `Комбинировать с Notion`.
-- `Очистить упавшие` - removes all `failed` jobs. If a recording has no jobs left, related artifacts are removed too.
+- `Начать запись` / `Стоп`
+- `Добавить аудио файл`
+- `Профиль Codex (low|medium|high)`
+- `Название подстраницы Notion` (ручной ввод, без `prompt()`)
+- `Открыть HTML`, `Открыть merged.md`, `Повторить задачу`, `Комбинировать с Notion`
+- `Очистить упавшие`
 
 ## Install
 
@@ -26,82 +24,75 @@ The app is configured for fail-safe behavior by default: if STT/Codex real worke
 npm install
 ```
 
+## Unified bootstrap (macOS + Ubuntu)
+
+```bash
+scripts/bootstrap.sh
+```
+
+Ubuntu with Docker/Nginx web stack:
+
+```bash
+scripts/bootstrap.sh --ubuntu-web
+```
+
 ## Required runtime for real workers
 
 - Node.js 24+
 - `ffmpeg`, `ffprobe`
-- Python 3.11+ with:
-  - `whisperx`
-  - `torch`
-  - `pyannote` stack (for diarization)
-- `codex` CLI for structure/merge stages
+- `codex` CLI
+- `whisper.cpp` binary + model file
+- Groq API key (if `CONSPECTOR_STT_PRIMARY=groq`)
 
 ## Environment variables
 
-### STT / diarization
+### STT v2
 
 - `CONSPECTOR_STT_MODE=real|mock` (default: `real`)
-- `CONSPECTOR_STT_PYTHON=python3`
-- `CONSPECTOR_STT_SCRIPT=/abs/path/to/scripts/run_stt_diarization.py`
-- `CONSPECTOR_WHISPER_MODEL=medium`
-- `CONSPECTOR_STT_LANGUAGE=ru`
-- `CONSPECTOR_STT_DEVICE=cpu|cuda`
-- `CONSPECTOR_STT_COMPUTE_TYPE=int8`
-- `CONSPECTOR_STT_BATCH_SIZE=8`
+- `CONSPECTOR_STT_PRIMARY=groq|whispercpp` (default: `groq`)
+- `CONSPECTOR_STT_FALLBACK=whispercpp|none` (default: `whispercpp`)
 - `CONSPECTOR_STT_TIMEOUT_SEC=1800`
-- `CONSPECTOR_REQUIRE_DIARIZATION=true|false` (default: `true`)
-- `HUGGINGFACE_TOKEN=...` (required if diarization is enabled)
-- `CONSPECTOR_STT_FALLBACK_TO_MOCK=true|false` (default: `true`)
-- `CONSPECTOR_MIC_DEVICE_INDEX=<int>` (optional, macOS avfoundation audio device index)
+- `CONSPECTOR_STT_LANGUAGE=ru`
+- `CONSPECTOR_STT_FALLBACK_TO_MOCK=true|false` (default: `false`, recommended for production)
+
+Groq:
+
+- `CONSPECTOR_GROQ_API_KEY=...` (or `GROQ_API_KEY`)
+- `CONSPECTOR_GROQ_MODEL=whisper-large-v3-turbo`
+- `CONSPECTOR_GROQ_MAX_FILE_MB=25`
+- `CONSPECTOR_GROQ_CHUNK_MIN=18`
+
+whisper.cpp:
+
+- `CONSPECTOR_WHISPERCPP_BIN=/abs/path/to/whisper-cli`
+- `CONSPECTOR_WHISPERCPP_MODEL_PATH=/abs/path/to/ggml-*.bin`
+- `CONSPECTOR_WHISPERCPP_THREADS=2`
+- `CONSPECTOR_WHISPER_MODEL=base` (metadata label only)
 
 ### Codex workers
 
-- `CONSPECTOR_CODEX_MODE=real|mock` (default: `real`)
-- `CONSPECTOR_CODEX_FULL_AUTO=true|false` (default: `true`)
-- `CONSPECTOR_CODEX_MODEL=<model>` (optional)
-- `CONSPECTOR_CODEX_EFFORT=low|medium|high` (default: `medium`)
+- `CONSPECTOR_CODEX_MODE=real|mock`
+- `CONSPECTOR_CODEX_FULL_AUTO=true|false`
+- `CONSPECTOR_CODEX_MODEL=<optional>`
+- `CONSPECTOR_CODEX_EFFORT=low|medium|high`
 - `CONSPECTOR_CODEX_TIMEOUT_SEC=600`
 - `CONSPECTOR_CODEX_WORKDIR=/path/to/workdir`
-- `CONSPECTOR_SOURCE_NOTE_PATH=/path/to/base_note.md` (optional)
-- `CONSPECTOR_CODEX_FALLBACK_TO_MOCK=true|false` (default: `true`)
+- `CONSPECTOR_SOURCE_NOTE_PATH=/path/to/base_note.md`
+- `CONSPECTOR_CODEX_FALLBACK_TO_MOCK=true|false`
 
-By default, real Codex calls now mirror the `abi-paper` style:
-- `codex exec --full-auto --skip-git-repo-check --cd <workdir>`
-- `-c model_reasoning_effort="<low|medium|high>"`
-- output persisted via `--output-last-message <file>`
+### Notion writeback
 
-For project-level Codex behavior, keep `AGENTS.md` and `.agents/skills/*/SKILL.md` inside `CONSPECTOR_CODEX_WORKDIR`.
-
-### Notion writeback (optional)
-
-- `CONSPECTOR_NOTION_MODE=off|real` (default: `off`)
+- `CONSPECTOR_NOTION_MODE=off|real`
 - `NOTION_TOKEN=...`
-- `CONSPECTOR_NOTION_PAGE_ID=<page-id>` or
-- `CONSPECTOR_NOTION_PAGE_TITLE=<exact-unique-title>`
-- `CONSPECTOR_NOTION_ROOT_PAGE_ID=<root-page-id-for-nested-subpages>` (optional)
-- `CONSPECTOR_NOTION_MERGE_WITH_EXISTING=true|false` (default: `true`)
-- `CONSPECTOR_NOTION_SOFT_FAIL=true|false` (default: `true`)
+- `CONSPECTOR_NOTION_ROOT_PAGE_ID=<root id for nested pages>`
+- UI field `Название подстраницы Notion` is required for manual target selection.
+- If page is not found under root, writeback fails with suggestions (no auto-create, no root fallback).
 
-Notion setup checklist:
+### Resilience
 
-1. Create an internal Notion integration and copy its token (`NOTION_TOKEN`).
-2. In integration capabilities enable content access:
-   - Read content
-   - Update content
-   - Insert content
-3. Open target page in Notion -> `...` -> `Add connections` -> choose your integration.
-4. Set one target selector:
-   - `CONSPECTOR_NOTION_PAGE_ID` (recommended), or
-   - `CONSPECTOR_NOTION_PAGE_TITLE` (exact unique title).
-5. For subject subpages under a parent page, set `CONSPECTOR_NOTION_ROOT_PAGE_ID=<АБИ page id>` and pass subpage title in UI prompt (`Комбинировать с Notion`).
-6. With `CONSPECTOR_NOTION_MERGE_WITH_EXISTING=true`, app reads current Notion page blocks, converts them to markdown, merges with new note via Codex, then writes final result.
-
-`CONSPECTOR_NOTION_PAGE_ID` can be taken from page URL as the trailing 32-char id (with or without dashes).
-
-### Resilience controls
-
-- `CONSPECTOR_HTML_SOFT_FAIL=true|false` (default: `true`)
-- `CONSPECTOR_PREFLIGHT_STRICT=true|false` (default: `false`)
+- `CONSPECTOR_NOTION_SOFT_FAIL=true|false`
+- `CONSPECTOR_HTML_SOFT_FAIL=true|false`
+- `CONSPECTOR_PREFLIGHT_STRICT=true|false`
 
 ## Preflight
 
@@ -109,40 +100,21 @@ Notion setup checklist:
 npm run preflight
 ```
 
-Checks required binaries/config for current modes.
-By default it is non-blocking (`CONSPECTOR_PREFLIGHT_STRICT=false`): issues are warnings.
-
-## Smoke test (safe, no heavy workers)
-
-```bash
-npm run smoke:import
-```
-
-Runs the full queue path with STT/Codex in `mock` mode to verify plumbing.
-
-## Start app
+## Start
 
 ```bash
 npm start
 ```
 
-## Full ready sequence (safe mock workers)
-
-```bash
-npm run start:ready
-```
-
-## Real workers launch
+## Real launch
 
 ```bash
 npm run start:real
 ```
-
-If preflight fails, install STT python deps and set `HUGGINGFACE_TOKEN`.
-Set `CONSPECTOR_PREFLIGHT_STRICT=true` to make preflight blocking.
 
 ## Tests
 
 ```bash
 npm test
 ```
+

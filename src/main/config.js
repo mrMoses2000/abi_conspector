@@ -22,6 +22,11 @@ function parseIntSafe(value, fallback) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function parseEnum(value, allowed, fallback) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return allowed.includes(normalized) ? normalized : fallback;
+}
+
 export function getDataRoot() {
   return path.join(app.getPath('userData'), 'data');
 }
@@ -49,6 +54,8 @@ export function getRuntimeConfig() {
   const sttMode = process.env.CONSPECTOR_STT_MODE === 'mock' ? 'mock' : 'real';
   const codexMode = process.env.CONSPECTOR_CODEX_MODE === 'mock' ? 'mock' : 'real';
   const notionMode = process.env.CONSPECTOR_NOTION_MODE === 'real' ? 'real' : 'off';
+  const sttPrimary = parseEnum(process.env.CONSPECTOR_STT_PRIMARY, ['groq', 'whispercpp'], 'groq');
+  const sttFallback = parseEnum(process.env.CONSPECTOR_STT_FALLBACK, ['whispercpp', 'none'], 'whispercpp');
 
   return {
     ffmpeg: {
@@ -58,17 +65,19 @@ export function getRuntimeConfig() {
     },
     stt: {
       mode: sttMode,
-      pythonBin: process.env.CONSPECTOR_STT_PYTHON || 'python3',
-      scriptPath:
-        process.env.CONSPECTOR_STT_SCRIPT || path.join(projectRoot, 'scripts', 'run_stt_diarization.py'),
+      primary: sttPrimary,
+      fallback: sttFallback,
       model: process.env.CONSPECTOR_WHISPER_MODEL || 'medium',
       language: process.env.CONSPECTOR_STT_LANGUAGE || 'ru',
-      device: process.env.CONSPECTOR_STT_DEVICE || 'cpu',
-      computeType: process.env.CONSPECTOR_STT_COMPUTE_TYPE || 'int8',
-      batchSize: parseIntSafe(process.env.CONSPECTOR_STT_BATCH_SIZE, 8),
-      hfToken: process.env.HUGGINGFACE_TOKEN || '',
-      requireDiarization: parseBoolean(process.env.CONSPECTOR_REQUIRE_DIARIZATION, true),
-      timeoutMs: parseIntSafe(process.env.CONSPECTOR_STT_TIMEOUT_SEC, 1800) * 1000
+      timeoutMs: parseIntSafe(process.env.CONSPECTOR_STT_TIMEOUT_SEC, 1800) * 1000,
+      groqApiKey: process.env.CONSPECTOR_GROQ_API_KEY || process.env.GROQ_API_KEY || '',
+      groqModel: process.env.CONSPECTOR_GROQ_MODEL || 'whisper-large-v3-turbo',
+      groqMaxFileMb: parseIntSafe(process.env.CONSPECTOR_GROQ_MAX_FILE_MB, 25),
+      groqChunkMinutes: parseIntSafe(process.env.CONSPECTOR_GROQ_CHUNK_MIN, 18),
+      whisperCppBin: process.env.CONSPECTOR_WHISPERCPP_BIN || 'whisper-cli',
+      whisperCppModelPath:
+        process.env.CONSPECTOR_WHISPERCPP_MODEL_PATH || path.join(projectRoot, 'models', 'ggml-base.bin'),
+      whisperCppThreads: parseIntSafe(process.env.CONSPECTOR_WHISPERCPP_THREADS, 2)
     },
     codex: {
       mode: codexMode,
@@ -88,7 +97,7 @@ export function getRuntimeConfig() {
       mergeWithExisting: parseBoolean(process.env.CONSPECTOR_NOTION_MERGE_WITH_EXISTING, true)
     },
     resilience: {
-      sttFallbackToMock: parseBoolean(process.env.CONSPECTOR_STT_FALLBACK_TO_MOCK, true),
+      sttFallbackToMock: parseBoolean(process.env.CONSPECTOR_STT_FALLBACK_TO_MOCK, false),
       codexFallbackToMock: parseBoolean(process.env.CONSPECTOR_CODEX_FALLBACK_TO_MOCK, true),
       notionSoftFail: parseBoolean(process.env.CONSPECTOR_NOTION_SOFT_FAIL, true),
       continueWithoutHtml: parseBoolean(process.env.CONSPECTOR_HTML_SOFT_FAIL, true),
