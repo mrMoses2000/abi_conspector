@@ -24,6 +24,34 @@ Electron desktop app for lecture note processing:
 npm install
 ```
 
+## Unified launcher (`run.sh`)
+
+```bash
+chmod +x run.sh
+./run.sh
+```
+
+Interactive launcher provides one menu for:
+
+- bootstrap dependencies
+- preflight
+- desktop start
+- web start (accounts/roles/shared view)
+- Ubuntu web stack start (Docker + Nginx)
+
+Non-interactive mode:
+
+```bash
+./run.sh --bootstrap
+./run.sh --bootstrap-web
+./run.sh --preflight
+./run.sh --preflight-strict
+./run.sh --desktop
+./run.sh --desktop-real
+./run.sh --web
+./run.sh --ubuntu-web-stack
+```
+
 ## Unified bootstrap (macOS + Ubuntu)
 
 ```bash
@@ -87,6 +115,21 @@ whisper.cpp:
 - `CONSPECTOR_NOTION_ROOT_PAGE_ID=<root id for nested pages>`
 - UI field `Название подстраницы Notion` is required for manual target selection.
 - If page is not found under root, writeback fails with suggestions (no auto-create, no root fallback).
+- Notion API integration is supported on both macOS and Linux.
+
+### Web mode (accounts and roles)
+
+- `CONSPECTOR_WEB_PORT=8787`
+- `CONSPECTOR_WEB_DB_PATH=/abs/path/to/web.db` (optional)
+- `CONSPECTOR_WEB_SESSION_DAYS=30`
+- `CONSPECTOR_ADMIN_EMAILS=admin1@example.com,admin2@example.com`
+
+Behavior:
+
+- Any user can register/login and view shared conspects list.
+- Admin users (email in `CONSPECTOR_ADMIN_EMAILS`) can:
+  - list users
+  - trigger Notion writeback manually (`recordingId + pageTitle`).
 
 ### Resilience
 
@@ -106,6 +149,12 @@ npm run preflight
 npm start
 ```
 
+## Start web mode
+
+```bash
+npm run start:web
+```
+
 ## Real launch
 
 ```bash
@@ -117,4 +166,3 @@ npm run start:real
 ```bash
 npm test
 ```
-

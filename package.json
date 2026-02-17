@@ -8,6 +8,7 @@
     "bootstrap": "scripts/bootstrap.sh",
     "dev": "electron .",
     "start": "electron .",
+    "start:web": "node -r dotenv/config web/server.js",
     "preflight": "node -r dotenv/config scripts/preflight.js",
     "smoke:import": "node -r dotenv/config scripts/smoke-import.js",
     "start:ready": "CONSPECTOR_STT_MODE=mock CONSPECTOR_CODEX_MODE=mock npm run preflight && npm run smoke:import && npm start",
@@ -21,6 +22,7 @@
     "@notionhq/client": "^3.1.0",
     "dotenv": "^17.2.3",
     "electron": "^36.0.0",
+    "express": "^5.1.0",
     "markdown-it": "^14.1.0"
   }
 }

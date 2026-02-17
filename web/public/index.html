@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ABI Conspector Web</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <section id="auth-card" class="card">
+        <h1>ABI Conspector Web</h1>
+        <p class="muted">Вход и регистрация. Все пользователи видят общий список готовых конспектов.</p>
+        <div class="tabs">
+          <button id="tab-login" class="tab active" type="button">Вход</button>
+          <button id="tab-register" class="tab" type="button">Регистрация</button>
+        </div>
+
+        <form id="login-form" class="form">
+          <label>
+            Email
+            <input id="login-email" type="email" required />
+          </label>
+          <label>
+            Пароль
+            <input id="login-password" type="password" required minlength="8" />
+          </label>
+          <button class="btn primary" type="submit">Войти</button>
+        </form>
+
+        <form id="register-form" class="form hidden">
+          <label>
+            Email
+            <input id="register-email" type="email" required />
+          </label>
+          <label>
+            Пароль (минимум 8 символов)
+            <input id="register-password" type="password" required minlength="8" />
+          </label>
+          <button class="btn primary" type="submit">Создать аккаунт</button>
+        </form>
+
+        <div id="auth-status" class="status">Ожидание входа</div>
+      </section>
+
+      <section id="app-card" class="card hidden">
+        <div class="header">
+          <div>
+            <h2>Список конспектов</h2>
+            <p id="user-line" class="muted"></p>
+          </div>
+          <div class="actions">
+            <button id="refresh-btn" class="btn secondary" type="button">Обновить</button>
+            <button id="logout-btn" class="btn ghost" type="button">Выйти</button>
+          </div>
+        </div>
+
+        <div id="app-status" class="status">Загрузка...</div>
+
+        <table id="conspects-table">
+          <thead>
+            <tr>
+              <th>Файл</th>
+              <th>Статус</th>
+              <th>Этап</th>
+              <th>Warning</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+          <tbody id="conspects-body"></tbody>
+        </table>
+      </section>
+
+      <section id="admin-card" class="card hidden">
+        <h2>Admin</h2>
+        <p class="muted">Управление пользователями и ручной writeback в Notion.</p>
+
+        <form id="notion-form" class="form inline">
+          <label>
+            recordingId
+            <input id="notion-recording-id" type="text" placeholder="rec_..." required />
+          </label>
+          <label>
+            Название подстраницы Notion
+            <input id="notion-page-title" type="text" placeholder="Экклесиология" required />
+          </label>
+          <button class="btn primary" type="submit">Writeback</button>
+        </form>
+
+        <div id="admin-status" class="status">Admin режим</div>
+
+        <table id="users-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody id="users-body"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
+
