@@ -448,7 +448,7 @@ run_configure_env() {
   set_env_value "CONSPECTOR_WEB_PORT" "$(read_prompt "Web port" "$(get_env_value "CONSPECTOR_WEB_PORT" "8787")")"
   set_env_value "CONSPECTOR_ADMIN_EMAILS" "$(read_prompt "Admin emails (comma-separated)" "$(get_env_value "CONSPECTOR_ADMIN_EMAILS" "")")"
   set_env_value "CONSPECTOR_STT_FALLBACK_TO_MOCK" "$(pick_from_choices "Allow STT fallback to mock? (true|false)" "$(get_env_value "CONSPECTOR_STT_FALLBACK_TO_MOCK" "false")" "true" "false")"
-  set_env_value "CONSPECTOR_CODEX_FALLBACK_TO_MOCK" "$(pick_from_choices "Allow Codex fallback to mock? (true|false)" "$(get_env_value "CONSPECTOR_CODEX_FALLBACK_TO_MOCK" "true")" "true" "false")"
+  set_env_value "CONSPECTOR_CODEX_FALLBACK_TO_MOCK" "$(pick_from_choices "Allow LLM ($llm_provider) fallback to mock? (true|false)" "$(get_env_value "CONSPECTOR_CODEX_FALLBACK_TO_MOCK" "true")" "true" "false")"
 
   echo
   echo "Saved configuration to: $ENV_FILE"
