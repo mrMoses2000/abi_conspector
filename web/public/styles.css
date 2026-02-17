@@ -64,14 +64,20 @@ body {
   animation: fadeInUp 0.5s ease-out both;
 }
 
-.card + .card { animation-delay: 0.1s; }
-.card + .card + .card { animation-delay: 0.2s; }
+.card+.card {
+  animation-delay: 0.1s;
+}
+
+.card+.card+.card {
+  animation-delay: 0.2s;
+}
 
 @keyframes fadeInUp {
   from {
     opacity: 0;
     transform: translateY(16px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -105,7 +111,9 @@ h2 {
 }
 
 /* ─── Hidden ─── */
-.hidden { display: none !important; }
+.hidden {
+  display: none !important;
+}
 
 /* ─── Tabs ─── */
 .tabs {
@@ -193,7 +201,9 @@ input:focus {
   overflow: hidden;
 }
 
-.btn:active { transform: scale(0.97); }
+.btn:active {
+  transform: scale(0.97);
+}
 
 .btn.primary {
   background: var(--accent-gradient);
@@ -349,8 +359,17 @@ tbody tr:nth-child(even):hover {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 0.4; transform: scale(0.85); }
-  50% { opacity: 1; transform: scale(1); }
+
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 /* ─── Status dots ─── */
@@ -363,10 +382,25 @@ tbody tr:nth-child(even):hover {
   vertical-align: middle;
 }
 
-.status-dot.done { background: var(--success); box-shadow: 0 0 6px rgba(52, 211, 153, 0.4); }
-.status-dot.failed { background: var(--danger); box-shadow: 0 0 6px rgba(248, 113, 113, 0.4); }
-.status-dot.processing { background: #818cf8; animation: pulse 1.5s ease-in-out infinite; box-shadow: 0 0 6px rgba(129, 140, 248, 0.4); }
-.status-dot.pending { background: var(--muted); }
+.status-dot.done {
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.4);
+}
+
+.status-dot.failed {
+  background: var(--danger);
+  box-shadow: 0 0 6px rgba(248, 113, 113, 0.4);
+}
+
+.status-dot.processing {
+  background: #818cf8;
+  animation: pulse 1.5s ease-in-out infinite;
+  box-shadow: 0 0 6px rgba(129, 140, 248, 0.4);
+}
+
+.status-dot.pending {
+  background: var(--muted);
+}
 
 /* ─── Admin separator ─── */
 #admin-card {
@@ -387,6 +421,119 @@ tbody tr:nth-child(even):hover {
   color: var(--warning);
 }
 
+/* ─── Upload zone ─── */
+.upload-zone {
+  margin-top: 16px;
+  border: 2px dashed rgba(99, 102, 241, 0.25);
+  border-radius: var(--radius);
+  padding: 32px 24px;
+  text-align: center;
+  transition: all var(--transition);
+  position: relative;
+  overflow: hidden;
+}
+
+.upload-zone:hover {
+  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.03);
+}
+
+.upload-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(99, 102, 241, 0.08);
+  box-shadow: 0 0 24px rgba(99, 102, 241, 0.15);
+}
+
+.upload-icon {
+  font-size: 36px;
+  margin-bottom: 8px;
+}
+
+.upload-text {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.upload-hint {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.upload-pick-btn {
+  display: inline-flex !important;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 8px 14px;
+}
+
+.upload-formats {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 10px;
+  letter-spacing: 0.03em;
+}
+
+.upload-progress {
+  text-align: left;
+}
+
+.upload-progress-info {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.upload-progress-track {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(99, 102, 241, 0.12);
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent-gradient);
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.upload-status-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 8px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.upload-status-text.error {
+  color: var(--danger);
+}
+
+/* ─── Viewer ─── */
+.viewer-card {
+  min-height: 80vh;
+}
+
+.viewer-content {
+  margin-top: 16px;
+  min-height: 75vh;
+  position: relative;
+}
+
+.viewer-iframe {
+  width: 100%;
+  min-height: 75vh;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
 /* ─── Responsive ─── */
 @media (max-width: 880px) {
   .form.inline {
@@ -398,19 +545,33 @@ tbody tr:nth-child(even):hover {
     align-items: flex-start;
   }
 
-  h1 { font-size: 24px; }
+  h1 {
+    font-size: 24px;
+  }
 
-  .layout { padding: 16px 0 32px; }
+  .layout {
+    padding: 16px 0 32px;
+  }
 
-  .card { padding: 18px; }
+  .card {
+    padding: 18px;
+  }
 }
 
 @media (max-width: 480px) {
-  table, thead, tbody, th, td, tr {
+
+  table,
+  thead,
+  tbody,
+  th,
+  td,
+  tr {
     display: block;
   }
 
-  thead { display: none; }
+  thead {
+    display: none;
+  }
 
   tbody tr {
     border: 1px solid var(--card-border);

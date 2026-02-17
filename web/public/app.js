@@ -2,7 +2,9 @@ const state = {
   token: localStorage.getItem('conspector_web_token') || '',
   user: null,
   conspects: [],
-  health: null
+  health: null,
+  uploading: false,
+  pollingTimers: []
 };
 
 const refs = {
@@ -27,7 +29,21 @@ const refs = {
   logoutBtn: document.getElementById('logout-btn'),
   notionForm: document.getElementById('notion-form'),
   notionRecordingId: document.getElementById('notion-recording-id'),
-  notionPageTitle: document.getElementById('notion-page-title')
+  notionPageTitle: document.getElementById('notion-page-title'),
+  // Upload
+  uploadZone: document.getElementById('upload-zone'),
+  uploadInput: document.getElementById('upload-input'),
+  uploadProgress: document.getElementById('upload-progress'),
+  uploadFileName: document.getElementById('upload-file-name'),
+  uploadPercent: document.getElementById('upload-percent'),
+  uploadProgressBar: document.getElementById('upload-progress-bar'),
+  uploadStatusText: document.getElementById('upload-status-text'),
+  // Viewer
+  viewerCard: document.getElementById('viewer-card'),
+  viewerTitle: document.getElementById('viewer-title'),
+  viewerBack: document.getElementById('viewer-back'),
+  viewerDownloadMd: document.getElementById('viewer-download-md'),
+  viewerContent: document.getElementById('viewer-content')
 };
 
 function setStatus(node, text, isError = false) {
@@ -51,11 +67,29 @@ function showAuthScreen() {
 function showAppScreen() {
   refs.authCard.classList.add('hidden');
   refs.appCard.classList.remove('hidden');
+  refs.viewerCard.classList.add('hidden');
   if (state.user?.role === 'admin') {
     refs.adminCard.classList.remove('hidden');
   } else {
     refs.adminCard.classList.add('hidden');
   }
+}
+
+function showViewerScreen(title, recordingId) {
+  refs.appCard.classList.add('hidden');
+  refs.adminCard.classList.add('hidden');
+  refs.viewerCard.classList.remove('hidden');
+  refs.viewerTitle.textContent = title || 'Конспект';
+  refs.viewerContent.textContent = 'Загрузка...';
+  state.viewingRecordingId = recordingId;
+  loadConspectHtml(recordingId);
+}
+
+function showAppFromViewer() {
+  refs.viewerCard.classList.add('hidden');
+  refs.viewerContent.textContent = '';
+  state.viewingRecordingId = null;
+  showAppScreen();
 }
 
 function formatDuration(seconds) {
@@ -211,21 +245,24 @@ function renderConspects(items) {
 
     const actionsCell = document.createElement('td');
     actionsCell.setAttribute('data-label', 'Действия');
-    const htmlButton = document.createElement('button');
-    htmlButton.className = 'btn secondary';
-    htmlButton.type = 'button';
-    htmlButton.textContent = 'HTML';
-    htmlButton.disabled = !item.htmlAvailable;
-    htmlButton.addEventListener('click', () => openAsset(item.recordingId, 'html'));
 
-    const mdButton = document.createElement('button');
-    mdButton.className = 'btn secondary';
-    mdButton.type = 'button';
-    mdButton.textContent = 'MD';
-    mdButton.disabled = !item.markdownAvailable;
-    mdButton.addEventListener('click', () => openAsset(item.recordingId, 'md'));
+    if (item.htmlAvailable) {
+      const viewBtn = document.createElement('button');
+      viewBtn.className = 'btn secondary';
+      viewBtn.style.fontSize = '12px';
+      viewBtn.style.padding = '6px 10px';
+      viewBtn.textContent = 'Просмотр';
+      viewBtn.addEventListener('click', () => {
+        showViewerScreen(item.fileName || item.recordingId, item.recordingId);
+      });
+      actionsCell.appendChild(viewBtn);
+    } else if (statusStr === 'processing' || statusStr === 'running' || statusStr === 'queued') {
+      const badge = document.createElement('span');
+      badge.className = 'badge processing';
+      badge.textContent = 'Обработка...';
+      actionsCell.appendChild(badge);
+    }
 
-    actionsCell.append(htmlButton, document.createTextNode(' '), mdButton);
     row.append(fileCell, statusCell, stageCell, warningCell, actionsCell);
     refs.conspectsBody.appendChild(row);
   }
@@ -457,4 +494,204 @@ async function init() {
 init().catch((error) => {
   showAuthScreen();
   setStatus(refs.authStatus, `Ошибка инициализации: ${error.message}`, true);
+});
+
+// ─── Upload logic ───
+
+function resetUploadUI() {
+  state.uploading = false;
+  refs.uploadProgress.classList.add('hidden');
+  refs.uploadZone.querySelector('.upload-zone-content').classList.remove('hidden');
+  refs.uploadZone.classList.remove('drag-over');
+  refs.uploadProgressBar.style.width = '0%';
+  refs.uploadPercent.textContent = '0%';
+  refs.uploadStatusText.textContent = '';
+  refs.uploadInput.value = '';
+}
+
+function showUploadProgress(fileName) {
+  state.uploading = true;
+  refs.uploadZone.querySelector('.upload-zone-content').classList.add('hidden');
+  refs.uploadProgress.classList.remove('hidden');
+  refs.uploadFileName.textContent = fileName;
+  refs.uploadPercent.textContent = '0%';
+  refs.uploadProgressBar.style.width = '0%';
+  refs.uploadStatusText.textContent = 'Загрузка на сервер...';
+}
+
+async function uploadFile(file) {
+  if (state.uploading) return;
+
+  showUploadProgress(file.name);
+
+  try {
+    // Upload via XHR for progress tracking
+    const result = await new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload');
+      xhr.setRequestHeader('Authorization', `Bearer ${state.token}`);
+
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          const pct = Math.round((e.loaded / e.total) * 100);
+          refs.uploadPercent.textContent = `${pct}%`;
+          refs.uploadProgressBar.style.width = `${pct}%`;
+        }
+      });
+
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            reject(new Error('Невалидный ответ сервера'));
+          }
+        } else {
+          try {
+            const err = JSON.parse(xhr.responseText);
+            reject(new Error(err?.error?.message || `HTTP ${xhr.status}`));
+          } catch {
+            reject(new Error(`HTTP ${xhr.status}`));
+          }
+        }
+      });
+
+      xhr.addEventListener('error', () => reject(new Error('Ошибка сети')));
+      xhr.addEventListener('abort', () => reject(new Error('Загрузка отменена')));
+
+      const formData = new FormData();
+      formData.append('audio', file);
+      xhr.send(formData);
+    });
+
+    refs.uploadPercent.textContent = '100%';
+    refs.uploadProgressBar.style.width = '100%';
+    refs.uploadStatusText.textContent = `Файл загружен! Обработка: ${result.recordingId}`;
+    setStatus(refs.appStatus, `Загружено: ${result.fileName}. Обработка запущена.`);
+
+    // Start polling for job status
+    if (result.recordingId) {
+      pollJobStatus(result.recordingId);
+    }
+
+    // Refresh list after short delay
+    setTimeout(async () => {
+      await loadConspects();
+      resetUploadUI();
+    }, 2000);
+
+  } catch (error) {
+    refs.uploadStatusText.textContent = `Ошибка: ${error.message}`;
+    refs.uploadStatusText.classList.add('error');
+    setStatus(refs.appStatus, `Ошибка загрузки: ${error.message}`, true);
+    setTimeout(() => resetUploadUI(), 4000);
+  }
+}
+
+function pollJobStatus(recordingId) {
+  let attempts = 0;
+  const maxAttempts = 600; // ~10 minutes at 1s intervals
+
+  const timerId = setInterval(async () => {
+    attempts++;
+    if (attempts > maxAttempts) {
+      clearInterval(timerId);
+      return;
+    }
+
+    try {
+      const data = await apiRequest(`/api/jobs/${encodeURIComponent(recordingId)}/status`);
+      if (!data?.ok) return;
+
+      const job = data.job;
+      if (!job) return;
+
+      if (job.status === 'done') {
+        clearInterval(timerId);
+        setStatus(refs.appStatus, `Обработка завершена: ${recordingId}`);
+        await loadConspects();
+      } else if (job.status === 'failed') {
+        clearInterval(timerId);
+        setStatus(refs.appStatus, `Обработка не удалась: ${job.errorMessage || 'unknown'}`, true);
+        await loadConspects();
+      } else {
+        // Update status with current stage
+        setStatus(refs.appStatus, `Обработка ${recordingId}: ${job.stage || '...'} (${job.status})`);
+      }
+    } catch {
+      // Silently skip polling errors
+    }
+  }, 2000);
+
+  state.pollingTimers.push(timerId);
+}
+
+// ─── Drag-and-drop handlers ───
+
+refs.uploadZone.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  refs.uploadZone.classList.add('drag-over');
+});
+
+refs.uploadZone.addEventListener('dragleave', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  refs.uploadZone.classList.remove('drag-over');
+});
+
+refs.uploadZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  refs.uploadZone.classList.remove('drag-over');
+  const file = e.dataTransfer?.files?.[0];
+  if (file) {
+    uploadFile(file);
+  }
+});
+
+refs.uploadInput.addEventListener('change', () => {
+  const file = refs.uploadInput.files?.[0];
+  if (file) {
+    uploadFile(file);
+  }
+});
+
+// ─── Viewer logic ───
+
+async function loadConspectHtml(recordingId) {
+  try {
+    const html = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/html`, {
+      responseType: 'text'
+    });
+    refs.viewerContent.textContent = '';
+    const iframe = document.createElement('iframe');
+    iframe.className = 'viewer-iframe';
+    iframe.sandbox = 'allow-same-origin';
+    iframe.srcdoc = html;
+    refs.viewerContent.appendChild(iframe);
+  } catch (error) {
+    refs.viewerContent.textContent = `Ошибка загрузки конспекта: ${error.message}`;
+  }
+}
+
+refs.viewerBack.addEventListener('click', () => {
+  showAppFromViewer();
+});
+
+refs.viewerDownloadMd.addEventListener('click', async () => {
+  if (!state.viewingRecordingId) return;
+  try {
+    const blob = await apiRequest(`/api/conspects/${encodeURIComponent(state.viewingRecordingId)}/md`, {
+      responseType: 'blob'
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${state.viewingRecordingId}.md`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } catch (error) {
+    setStatus(refs.appStatus, `Ошибка скачивания MD: ${error.message}`, true);
+  }
 });

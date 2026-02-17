@@ -6,8 +6,14 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
+import multer from 'multer';
 import { writeMergedToNotion } from '../src/main/workers/notionWorker.js';
 import { ControlledError, asIpcError } from '../src/main/utils/errors.js';
+import { AppDatabase } from '../src/main/db/database.js';
+import { MergeQueue } from '../src/main/pipeline/mergeQueue.js';
+import { createMergePipeline } from '../src/main/pipeline/mergePipeline.js';
+import { ingestManagedAudio } from '../src/main/audio/ingestAudio.js';
+import { ensureDirs } from '../src/main/utils/fs.js';
 
 const app = express();
 const PORT = Number.parseInt(process.env.CONSPECTOR_WEB_PORT || '8787', 10);
@@ -183,6 +189,137 @@ const listUsersStmt = webDb.prepare(`
 
 app.use(express.json({ limit: '2mb' }));
 
+// ─── Managed paths for pipeline ───
+function parseBoolean2(value, fallback) {
+  if (value === undefined) return fallback;
+  const n = String(value).trim().toLowerCase();
+  return ['1', 'true', 'yes', 'on'].includes(n) ? true :
+    ['0', 'false', 'no', 'off'].includes(n) ? false : fallback;
+}
+function parseIntSafe2(value, fallback) {
+  const p = Number.parseInt(String(value ?? ''), 10);
+  return Number.isFinite(p) ? p : fallback;
+}
+function parseEnum2(value, allowed, fallback) {
+  const n = String(value ?? '').trim().toLowerCase();
+  return allowed.includes(n) ? n : fallback;
+}
+const managedPaths = {
+  root: dataRoot,
+  audio: path.join(dataRoot, 'audio'),
+  imports: path.join(dataRoot, 'imports'),
+  transcripts: path.join(dataRoot, 'transcripts'),
+  structured: path.join(dataRoot, 'structured'),
+  merged: path.join(dataRoot, 'merged'),
+  html: path.join(dataRoot, 'html'),
+  backups: path.join(dataRoot, 'backups')
+};
+
+// ─── Runtime config for pipeline (web-compatible, no Electron dependency) ───
+const projectRoot = process.cwd();
+const MAX_LECTURE_SECONDS = 3 * 60 * 60;
+const runtimeConfig = {
+  ffmpeg: { sampleRateHz: 16_000, channels: 1, format: 'flac' },
+  stt: {
+    mode: process.env.CONSPECTOR_STT_MODE === 'mock' ? 'mock' : 'real',
+    primary: parseEnum2(process.env.CONSPECTOR_STT_PRIMARY, ['groq', 'whispercpp'], 'groq'),
+    fallback: parseEnum2(process.env.CONSPECTOR_STT_FALLBACK, ['whispercpp', 'none'], 'whispercpp'),
+    model: process.env.CONSPECTOR_WHISPER_MODEL || 'medium',
+    language: process.env.CONSPECTOR_STT_LANGUAGE || 'ru',
+    timeoutMs: parseIntSafe2(process.env.CONSPECTOR_STT_TIMEOUT_SEC, 1800) * 1000,
+    groqApiKey: process.env.CONSPECTOR_GROQ_API_KEY || process.env.GROQ_API_KEY || '',
+    groqModel: process.env.CONSPECTOR_GROQ_MODEL || 'whisper-large-v3-turbo',
+    groqMaxFileMb: parseIntSafe2(process.env.CONSPECTOR_GROQ_MAX_FILE_MB, 25),
+    groqChunkMinutes: parseIntSafe2(process.env.CONSPECTOR_GROQ_CHUNK_MIN, 18),
+    whisperCppBin: process.env.CONSPECTOR_WHISPERCPP_BIN || 'whisper-cli',
+    whisperCppModelPath: process.env.CONSPECTOR_WHISPERCPP_MODEL_PATH || path.join(projectRoot, 'models', 'ggml-base.bin'),
+    whisperCppThreads: parseIntSafe2(process.env.CONSPECTOR_WHISPERCPP_THREADS, 2)
+  },
+  llm: { provider: parseEnum2(process.env.CONSPECTOR_LLM_PROVIDER, ['codex', 'gemini'], 'codex') },
+  codex: {
+    mode: process.env.CONSPECTOR_CODEX_MODE === 'mock' ? 'mock' : 'real',
+    fullAuto: parseBoolean2(process.env.CONSPECTOR_CODEX_FULL_AUTO, true),
+    model: process.env.CONSPECTOR_CODEX_MODEL || '',
+    reasoningEffort: process.env.CONSPECTOR_CODEX_EFFORT || 'medium',
+    timeoutMs: parseIntSafe2(process.env.CONSPECTOR_CODEX_TIMEOUT_SEC, 600) * 1000,
+    workdir: process.env.CONSPECTOR_CODEX_WORKDIR || projectRoot,
+    sourceNotePath: process.env.CONSPECTOR_SOURCE_NOTE_PATH || ''
+  },
+  gemini: {
+    mode: process.env.CONSPECTOR_GEMINI_MODE === 'mock' ? 'mock' : 'real',
+    model: process.env.CONSPECTOR_GEMINI_MODEL || 'gemini-3-flash-preview',
+    timeoutMs: parseIntSafe2(process.env.CONSPECTOR_GEMINI_TIMEOUT_SEC, 600) * 1000,
+    workdir: process.env.CONSPECTOR_GEMINI_WORKDIR || projectRoot,
+    sourceNotePath: process.env.CONSPECTOR_SOURCE_NOTE_PATH || '',
+    sandbox: parseBoolean2(process.env.CONSPECTOR_GEMINI_SANDBOX, false)
+  },
+  notion: {
+    mode: process.env.CONSPECTOR_NOTION_MODE === 'real' ? 'real' : 'off',
+    token: process.env.NOTION_TOKEN || '',
+    pageId: process.env.CONSPECTOR_NOTION_PAGE_ID || '',
+    pageTitle: process.env.CONSPECTOR_NOTION_PAGE_TITLE || '',
+    rootPageId: process.env.CONSPECTOR_NOTION_ROOT_PAGE_ID || '',
+    mergeWithExisting: parseBoolean2(process.env.CONSPECTOR_NOTION_MERGE_WITH_EXISTING, true)
+  },
+  resilience: {
+    sttFallbackToMock: parseBoolean2(process.env.CONSPECTOR_STT_FALLBACK_TO_MOCK, false),
+    codexFallbackToMock: parseBoolean2(process.env.CONSPECTOR_CODEX_FALLBACK_TO_MOCK, true),
+    notionSoftFail: parseBoolean2(process.env.CONSPECTOR_NOTION_SOFT_FAIL, true),
+    continueWithoutHtml: parseBoolean2(process.env.CONSPECTOR_HTML_SOFT_FAIL, true),
+    preflightStrict: parseBoolean2(process.env.CONSPECTOR_PREFLIGHT_STRICT, false)
+  },
+  maxLectureSeconds: MAX_LECTURE_SECONDS,
+  queueConcurrency: 1
+};
+
+// ─── Bootstrap pipeline ───
+await ensureDirs([
+  managedPaths.root, managedPaths.audio, managedPaths.imports,
+  managedPaths.transcripts, managedPaths.structured,
+  managedPaths.merged, managedPaths.html, managedPaths.backups
+]);
+
+const appDb = new AppDatabase(conspectorDbPath);
+const recovered = appDb.recoverStaleJobs();
+if (recovered > 0) {
+  process.stderr.write(`[web] recovered stale merge jobs: ${recovered}\n`);
+}
+
+const pipeline = createMergePipeline({
+  db: appDb,
+  managedPaths,
+  runtimeConfig
+});
+
+const mergeQueue = new MergeQueue({
+  worker: (jobId, notify) => pipeline.processJob(jobId, notify)
+});
+
+// Log pipeline events
+mergeQueue.on('job:started', ({ jobId }) => {
+  process.stdout.write(`[pipeline] job started: ${jobId}\n`);
+});
+mergeQueue.on('job:finished', ({ jobId }) => {
+  process.stdout.write(`[pipeline] job finished: ${jobId}\n`);
+});
+mergeQueue.on('job:failed', ({ jobId, error }) => {
+  process.stderr.write(`[pipeline] job failed: ${jobId} — ${error}\n`);
+});
+
+// ─── Multer upload config ───
+const upload = multer({
+  dest: managedPaths.imports,
+  limits: { fileSize: 500 * 1024 * 1024 }, // 500 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = /^(audio|video)\//;
+    if (allowed.test(file.mimetype) || /\.(mp3|wav|ogg|m4a|flac|aac|wma|webm|mp4|opus)$/i.test(file.originalname)) {
+      cb(null, true);
+    } else {
+      cb(new ControlledError('INVALID_FILE_TYPE', 'Only audio/video files are accepted'));
+    }
+  }
+});
+
 function getBearerToken(req) {
   const header = String(req.headers.authorization || '').trim();
   if (!header.toLowerCase().startsWith('bearer ')) {
@@ -347,6 +484,104 @@ function listConspects() {
   }
   return listConspectsFromHtmlDir();
 }
+
+// ─── Upload endpoint ───
+app.post('/api/upload', requireAuth, upload.single('audio'), async (req, res) => {
+  if (!req.file) {
+    res.status(400).json({ ok: false, error: { code: 'NO_FILE', message: 'No audio file uploaded' } });
+    return;
+  }
+
+  try {
+    const ext = path.extname(req.file.originalname) || '.bin';
+    const managedName = `${Date.now()}_${crypto.randomUUID()}${ext}`;
+    const managedAudioPath = path.join(managedPaths.imports, managedName);
+    await fsp.rename(req.file.path, managedAudioPath);
+
+    const result = await ingestManagedAudio({
+      managedAudioPath,
+      sourceType: 'imported_file',
+      originalFileName: req.file.originalname,
+      originalFilePath: null,
+      db: appDb,
+      maxLectureSeconds: MAX_LECTURE_SECONDS,
+      queue: mergeQueue,
+      cleanupOnError: true
+    });
+
+    res.json({
+      ok: true,
+      recordingId: result.recordingId,
+      jobId: result.normalizationStatus === 'queued' ? result.recordingId : null,
+      fileName: result.originalFilename,
+      durationSec: result.durationSec,
+      warning: result.warning || null
+    });
+  } catch (error) {
+    // Cleanup uploaded file on error
+    if (req.file?.path) {
+      await fsp.unlink(req.file.path).catch(() => { });
+    }
+    if (error instanceof ControlledError) {
+      res.status(400).json({ ok: false, error: asIpcError(error) });
+      return;
+    }
+    process.stderr.write(`[upload] error: ${error.message}\n`);
+    res.status(500).json({ ok: false, error: { code: 'UPLOAD_FAILED', message: 'Failed to process uploaded file' } });
+  }
+});
+
+// ─── Job status endpoint (for polling) ───
+app.get('/api/jobs/:recordingId/status', requireAuth, (req, res) => {
+  const recordingId = sanitizeRecordingId(req.params.recordingId);
+
+  if (!fs.existsSync(conspectorDbPath)) {
+    res.status(404).json({ ok: false, error: { code: 'DB_NOT_FOUND', message: 'Database not found' } });
+    return;
+  }
+
+  try {
+    const recording = appDb.getRecording(recordingId);
+    if (!recording) {
+      res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Recording not found' } });
+      return;
+    }
+
+    // Get latest job for this recording
+    const conspectorDb2 = new DatabaseSync(conspectorDbPath, { readOnly: true });
+    try {
+      const job = conspectorDb2.prepare(`
+        SELECT id, stage, status, warning, error_code, error_message, updated_at
+        FROM merge_jobs
+        WHERE recording_id = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).get(recordingId);
+
+      const htmlAvailable = fs.existsSync(path.join(dataRoot, 'html', `${recordingId}.html`));
+
+      res.json({
+        ok: true,
+        recordingId,
+        job: job ? {
+          jobId: job.id,
+          stage: job.stage,
+          status: job.status,
+          warning: job.warning || null,
+          errorCode: job.error_code || null,
+          errorMessage: job.error_message || null,
+          updatedAt: job.updated_at
+        } : null,
+        htmlAvailable
+      });
+    } finally {
+      conspectorDb2.close();
+    }
+  } catch (error) {
+    process.stderr.write(`[jobs/status] error: ${error.message}\n`);
+    res.status(500).json({ ok: false, error: { code: 'STATUS_ERROR', message: 'Could not fetch job status' } });
+  }
+});
 
 app.get('/api/health', (_req, res) => {
   res.json({
@@ -562,6 +797,6 @@ app.get(/^\/(?!api\/).*/, (_req, res) => {
 app.listen(PORT, () => {
   process.stdout.write(
     `[web] ABI Conspector web started on http://localhost:${PORT}\n` +
-      `[web] platform=${process.platform}, dataRoot=${dataRoot}\n`
+    `[web] platform=${process.platform}, dataRoot=${dataRoot}\n`
   );
 });
