@@ -333,9 +333,82 @@ async function resolvePageId(client, pageId, title, rootPageId, recording) {
   return exact.id;
 }
 
-function textRich(text) {
+/**
+ * Parse inline markdown into Notion rich_text array.
+ * Handles **bold**, *italic*, `code`, and combinations.
+ * @param {string} text
+ * @returns {Array<{type: 'text', text: {content: string}, annotations?: object}>}
+ */
+function parseInlineMarkdown(text) {
   const normalized = text.trim();
-  return [{ type: 'text', text: { content: normalized.slice(0, 1900) } }];
+  if (!normalized) {
+    return [{ type: 'text', text: { content: '' } }];
+  }
+
+  // Truncate to Notion limit
+  const src = normalized.slice(0, 1900);
+  const segments = [];
+
+  // Regex matches inline markdown tokens in order of priority:
+  // 1. ***bold+italic*** or ___bold+italic___
+  // 2. **bold** or __bold__
+  // 3. *italic* or _italic_ (but not inside words for _)
+  // 4. `code`
+  const inlineRe = /\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*|`([^`]+)`/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = inlineRe.exec(src)) !== null) {
+    // Push plain text before this match
+    if (match.index > lastIndex) {
+      segments.push({
+        type: 'text',
+        text: { content: src.slice(lastIndex, match.index) }
+      });
+    }
+
+    if (match[1] !== undefined) {
+      // ***bold+italic***
+      segments.push({
+        type: 'text',
+        text: { content: match[1] },
+        annotations: { bold: true, italic: true }
+      });
+    } else if (match[2] !== undefined) {
+      // **bold**
+      segments.push({
+        type: 'text',
+        text: { content: match[2] },
+        annotations: { bold: true }
+      });
+    } else if (match[3] !== undefined) {
+      // *italic*
+      segments.push({
+        type: 'text',
+        text: { content: match[3] },
+        annotations: { italic: true }
+      });
+    } else if (match[4] !== undefined) {
+      // `code`
+      segments.push({
+        type: 'text',
+        text: { content: match[4] },
+        annotations: { code: true }
+      });
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Push remaining plain text
+  if (lastIndex < src.length) {
+    segments.push({
+      type: 'text',
+      text: { content: src.slice(lastIndex) }
+    });
+  }
+
+  return segments.length > 0 ? segments : [{ type: 'text', text: { content: src } }];
 }
 
 function plainTextFromRichText(richTextArray) {
@@ -447,7 +520,7 @@ export function markdownToNotionBlocks(md) {
     blocks.push({
       object: 'block',
       type: 'paragraph',
-      paragraph: { rich_text: textRich(text) }
+      paragraph: { rich_text: parseInlineMarkdown(text) }
     });
   };
 
@@ -462,7 +535,7 @@ export function markdownToNotionBlocks(md) {
       type: 'code',
       code: {
         language: normalizeNotionCodeLang(codeLang),
-        rich_text: textRich(text)
+        rich_text: [{ type: 'text', text: { content: text.slice(0, 1900) } }]
       }
     });
   };
@@ -496,31 +569,32 @@ export function markdownToNotionBlocks(md) {
     const h1 = line.match(/^#\s+(.+)/);
     if (h1) {
       flushParagraph();
-      blocks.push({ object: 'block', type: 'heading_1', heading_1: { rich_text: textRich(h1[1]) } });
+      blocks.push({ object: 'block', type: 'heading_1', heading_1: { rich_text: parseInlineMarkdown(h1[1]) } });
       continue;
     }
 
     const h2 = line.match(/^##\s+(.+)/);
     if (h2) {
       flushParagraph();
-      blocks.push({ object: 'block', type: 'heading_2', heading_2: { rich_text: textRich(h2[1]) } });
+      blocks.push({ object: 'block', type: 'heading_2', heading_2: { rich_text: parseInlineMarkdown(h2[1]) } });
       continue;
     }
 
     const h3 = line.match(/^###\s+(.+)/);
     if (h3) {
       flushParagraph();
-      blocks.push({ object: 'block', type: 'heading_3', heading_3: { rich_text: textRich(h3[1]) } });
+      blocks.push({ object: 'block', type: 'heading_3', heading_3: { rich_text: parseInlineMarkdown(h3[1]) } });
       continue;
     }
 
-    const bullet = line.match(/^-\s+(.+)/);
+    // Support both - and * as bullet markers
+    const bullet = line.match(/^[*-]\s+(.+)/);
     if (bullet) {
       flushParagraph();
       blocks.push({
         object: 'block',
         type: 'bulleted_list_item',
-        bulleted_list_item: { rich_text: textRich(bullet[1]) }
+        bulleted_list_item: { rich_text: parseInlineMarkdown(bullet[1]) }
       });
       continue;
     }
@@ -531,7 +605,7 @@ export function markdownToNotionBlocks(md) {
       blocks.push({
         object: 'block',
         type: 'numbered_list_item',
-        numbered_list_item: { rich_text: textRich(numbered[1]) }
+        numbered_list_item: { rich_text: parseInlineMarkdown(numbered[1]) }
       });
       continue;
     }
@@ -539,7 +613,14 @@ export function markdownToNotionBlocks(md) {
     const quote = line.match(/^>\s+(.+)/);
     if (quote) {
       flushParagraph();
-      blocks.push({ object: 'block', type: 'quote', quote: { rich_text: textRich(quote[1]) } });
+      blocks.push({ object: 'block', type: 'quote', quote: { rich_text: parseInlineMarkdown(quote[1]) } });
+      continue;
+    }
+
+    // Horizontal rule / divider
+    if (/^---+$/.test(line.trim())) {
+      flushParagraph();
+      blocks.push({ object: 'block', type: 'divider', divider: {} });
       continue;
     }
 

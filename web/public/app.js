@@ -762,7 +762,7 @@ function populateLibraryDropdown() {
   select.innerHTML = '<option value="" disabled selected>— выберите конспект —</option>';
 
   const doneItems = (state.conspects || []).filter(
-    (item) => item.status === 'done' && item.htmlAvailable
+    (item) => item.status === 'done'
   );
 
   if (doneItems.length === 0) {
@@ -780,7 +780,9 @@ function populateLibraryDropdown() {
     opt.value = item.recordingId;
     const name = item.fileName || item.recordingId;
     const date = item.createdAt ? new Date(item.createdAt).toLocaleDateString('ru-RU') : '';
-    opt.textContent = date ? `${name}  ·  ${date}` : name;
+    const label = date ? `${name}  ·  ${date}` : name;
+    opt.textContent = item.htmlAvailable ? label : `${label}  (MD)`;
+    opt.dataset.hasHtml = item.htmlAvailable ? '1' : '0';
     select.appendChild(opt);
   }
 
@@ -794,16 +796,33 @@ async function loadLibraryConspect(recordingId) {
   refs.libraryContent.textContent = 'Загрузка...';
   refs.libraryDownloadMd.disabled = false;
   state.libraryRecordingId = recordingId;
+
+  // Check if HTML is available for this item
+  const selectedOption = refs.librarySelect.selectedOptions[0];
+  const hasHtml = selectedOption?.dataset.hasHtml === '1';
+
   try {
-    const html = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/html`, {
-      responseType: 'text'
-    });
-    refs.libraryContent.textContent = '';
-    const iframe = document.createElement('iframe');
-    iframe.className = 'viewer-iframe';
-    iframe.sandbox = 'allow-same-origin';
-    iframe.srcdoc = html;
-    refs.libraryContent.appendChild(iframe);
+    if (hasHtml) {
+      const html = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/html`, {
+        responseType: 'text'
+      });
+      refs.libraryContent.textContent = '';
+      const iframe = document.createElement('iframe');
+      iframe.className = 'viewer-iframe';
+      iframe.sandbox = 'allow-same-origin';
+      iframe.srcdoc = html;
+      refs.libraryContent.appendChild(iframe);
+    } else {
+      // Fallback: fetch markdown and display as preformatted text
+      const mdText = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/md`, {
+        responseType: 'text'
+      });
+      refs.libraryContent.textContent = '';
+      const pre = document.createElement('pre');
+      pre.className = 'library-md-fallback';
+      pre.textContent = mdText;
+      refs.libraryContent.appendChild(pre);
+    }
   } catch (error) {
     refs.libraryContent.textContent = `Ошибка: ${error.message}`;
   }
