@@ -136,11 +136,18 @@ ensure_env_file() {
 }
 
 ensure_npm_deps() {
-  if [[ -d "$ROOT_DIR/node_modules" ]]; then
-    return
+  local stamp="$ROOT_DIR/node_modules/.npm_stamp"
+  if [[ -d "$ROOT_DIR/node_modules" ]] && [[ -f "$stamp" ]]; then
+    # Re-install only if package.json is newer than last install
+    if [[ "$ROOT_DIR/package.json" -ot "$stamp" ]]; then
+      return
+    fi
+    echo "package.json changed since last install. Running npm install..."
+  else
+    echo "node_modules not found or no stamp. Running npm install..."
   fi
-  echo "node_modules not found. Running npm install..."
   npm install --production=false
+  touch "$stamp"
   echo "npm install complete."
 }
 
