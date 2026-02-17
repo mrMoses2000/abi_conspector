@@ -720,7 +720,16 @@ run_web() {
 
   # 4. Done
   local server_ip
-  server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'your-server-ip')"
+  # Try AWS EC2 public IP first (IMDSv2)
+  local imds_token
+  imds_token="$(curl -s -m 2 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 10' 2>/dev/null || true)"
+  if [[ -n "$imds_token" ]]; then
+    server_ip="$(curl -s -m 2 -H "X-aws-ec2-metadata-token: $imds_token" http://169.254.169.254/latest/meta-data/public-ipv4 2>/dev/null || true)"
+  fi
+  # Fallback to local IP
+  if [[ -z "$server_ip" ]]; then
+    server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'your-server-ip')"
+  fi
   echo
   echo "[3/3] ABI Conspector is live!"
   echo
