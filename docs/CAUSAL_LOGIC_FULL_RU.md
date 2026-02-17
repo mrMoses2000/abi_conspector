@@ -37,8 +37,8 @@
 4. Pipeline workers:
 - `normalize_audio`
 - `stt_diarization`
-- `codex_structure`
-- `merge`
+- `llm_structure` (codex или gemini, в зависимости от `CONSPECTOR_LLM_PROVIDER`)
+- `merge` (codex или gemini)
 - `render_html`
 - `notion_writeback`
 
@@ -46,7 +46,7 @@
 - `ffmpeg`/`ffprobe`
 - Groq API
 - whisper.cpp (`whisper-cli`)
-- Codex CLI
+- Codex CLI **или** Gemini CLI (зависит от `CONSPECTOR_LLM_PROVIDER`)
 - Notion API
 
 ## 3. Поток №1: импорт файла (детально)
@@ -93,13 +93,16 @@
 - при `CONSPECTOR_STT_FALLBACK_TO_MOCK=false` -> job падает;
 - при `true` -> создаётся mock transcript (качество низкое, но pipeline продолжится).
 
-### Шаг 4. codex_structure
+### Шаг 4. llm_structure (codex или gemini)
 
 Причина:
 - получен `transcript.json`.
 
 Следствие:
-- `codex exec` формирует `structured.md` по правилам skills (`conspector-structure`).
+- `llmProvider.js` определяет, какой воркер использовать:
+  - `CONSPECTOR_LLM_PROVIDER=codex` → `codexWorker.js` → `codex exec`
+  - `CONSPECTOR_LLM_PROVIDER=gemini` → `geminiWorker.js` → `gemini --prompt -`
+- воркер формирует `structured.md` по правилам skills (`conspector-structure`).
 
 Если этап падает:
 - при включённом fallback может быть mock structured output;

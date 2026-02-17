@@ -167,23 +167,36 @@ function renderConspects(items) {
     const row = document.createElement('tr');
 
     const fileCell = document.createElement('td');
+    fileCell.setAttribute('data-label', 'Файл');
     const title = document.createElement('div');
     title.textContent = item.fileName || item.recordingId;
     const meta = document.createElement('div');
     meta.className = 'muted';
+    meta.style.fontSize = '12px';
+    meta.style.fontFamily = "'JetBrains Mono', monospace";
     meta.textContent = `${item.recordingId} · ${formatDuration(item.durationSec)} · ${formatDate(item.createdAt)}`;
     fileCell.append(title, meta);
 
     const statusCell = document.createElement('td');
+    statusCell.setAttribute('data-label', 'Статус');
+    const statusStr = (item.status || 'unknown').toLowerCase();
+    const dot = document.createElement('span');
+    dot.className = `status-dot ${statusStr}`;
     const statusBadge = document.createElement('span');
-    statusBadge.className = 'badge';
+    const badgeClass = statusStr === 'done' ? 'done'
+      : statusStr === 'failed' ? 'failed'
+        : (statusStr === 'processing' || statusStr === 'running') ? 'processing'
+          : '';
+    statusBadge.className = `badge ${badgeClass}`;
     statusBadge.textContent = item.status || 'unknown';
-    statusCell.appendChild(statusBadge);
+    statusCell.append(dot, statusBadge);
 
     const stageCell = document.createElement('td');
+    stageCell.setAttribute('data-label', 'Этап');
     stageCell.textContent = item.stage || '-';
 
     const warningCell = document.createElement('td');
+    warningCell.setAttribute('data-label', 'Warning');
     if (item.mockFallbackUsed) {
       const warnBadge = document.createElement('span');
       warnBadge.className = 'badge warn';
@@ -197,6 +210,7 @@ function renderConspects(items) {
     warningCell.appendChild(warningLine);
 
     const actionsCell = document.createElement('td');
+    actionsCell.setAttribute('data-label', 'Действия');
     const htmlButton = document.createElement('button');
     htmlButton.className = 'btn secondary';
     htmlButton.type = 'button';

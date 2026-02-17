@@ -57,6 +57,11 @@ Core runtime:
 - `src/main/db/database.js`
 - `src/main/config.js`
 
+LLM Provider:
+- `src/main/workers/llmProvider.js` — factory: routes to Codex or Gemini worker
+- `src/main/workers/codexWorker.js` — Codex CLI child process
+- `src/main/workers/geminiWorker.js` — Gemini CLI child process
+
 STT:
 - `src/main/workers/sttWorker.js`
 - `src/main/workers/sttGroqChunkedWorker.js`
@@ -65,9 +70,6 @@ STT:
 
 Notion:
 - `src/main/workers/notionWorker.js`
-
-Codex:
-- `src/main/workers/codexWorker.js`
 
 Desktop UI:
 - `src/renderer/index.html`
@@ -79,11 +81,17 @@ Web mode:
 - `web/public/app.js`
 - `web/public/styles.css`
 
+Gemini CLI skills & context:
+- `.gemini/GEMINI.md` — project context auto-loaded by Gemini CLI
+- `.gemini/skills/conspector-structure/SKILL.md`
+- `.gemini/skills/conspector-merge/SKILL.md`
+
 Ops / tooling:
 - `run.sh`
 - `scripts/bootstrap.sh`
 - `scripts/preflight.js`
 - `scripts/env-doctor.js`
+- `scripts/setup-gemini-skills.sh`
 
 ## 4) How to Validate Project Quickly
 
@@ -106,7 +114,7 @@ If env doctor finds safe fixable values:
 ## 5) Known Open Areas (Next Work Candidates)
 
 Priority P1:
-- Add explicit “Notion connectivity check” action in GUI (token/root access/subpage list preview).
+- Add explicit "Notion connectivity check" action in GUI (token/root access/subpage list preview).
 - Add server process supervision docs/templates (`systemd`) for production Linux.
 - Improve preflight/env-doctor consistency (share one rule source to avoid drift).
 
@@ -117,7 +125,6 @@ Priority P2:
 
 Priority P3:
 - Refine HTML visual presentation (separate visual task brief exists in `docs/visual-agent-brief.md`).
-- Add optional provider abstraction for Gemini CLI alongside Codex CLI.
 
 ## 6) Notion Requirements (Must Not Break)
 
@@ -135,9 +142,67 @@ Priority P3:
 - Keep docs and scripts commands in English; explanatory prose can be Russian.
 - Prefer absolute project paths in `.env` (`run.sh --fix-env-paths` handles template placeholders).
 
-## 8) Local Skills (for note generation prompts)
+## 8) LLM Provider Abstraction (Codex / Gemini)
 
-Local project skills are in `.agents/skills/*/SKILL.md`.
+The pipeline supports two LLM backends for structuring and merging notes:
+
+| Env Variable | Values | Default |
+|--- |--- |--- |
+| `CONSPECTOR_LLM_PROVIDER` | `codex`, `gemini` | `codex` |
+
+### Switching to Gemini CLI
+
+```bash
+# In .env:
+CONSPECTOR_LLM_PROVIDER=gemini
+CONSPECTOR_GEMINI_MODEL=gemini-3-flash-preview
+```
+
+### Gemini CLI Setup
+
+```bash
+# First-time setup (idempotent, safe to re-run):
+./scripts/setup-gemini-skills.sh
+
+# Or via run.sh:
+./run.sh --setup-gemini
+```
+
+This creates/updates:
+- `.gemini/GEMINI.md` — project context (always loaded by Gemini CLI)
+- `.gemini/skills/conspector-structure/SKILL.md` — transcript → note skill
+- `.gemini/skills/conspector-merge/SKILL.md` — note merge skill
+
+### Gemini CLI Non-Interactive Mode
+
+The worker calls Gemini CLI as a child process:
+
+```bash
+gemini --model gemini-3-flash-preview --prompt - --output-format text --sandbox=false
+```
+
+Prompt is piped via stdin; output captured from stdout.
+
+### Gemini Config Env Variables
+
+| Variable | Description | Default |
+|--- |--- |--- |
+| `CONSPECTOR_GEMINI_MODE` | `real` or `mock` | `real` |
+| `CONSPECTOR_GEMINI_MODEL` | Model name | `gemini-3-flash-preview` |
+| `CONSPECTOR_GEMINI_TIMEOUT_SEC` | Timeout in seconds | `600` |
+| `CONSPECTOR_GEMINI_WORKDIR` | Working directory | project root |
+| `CONSPECTOR_GEMINI_SANDBOX` | Enable sandbox | `false` |
+
+### Auth
+
+Gemini CLI uses OAuth personal auth configured in `~/.gemini/settings.json`.
+No API key env variable is needed.
+
+## 9) Local Skills (for note generation prompts)
+
+Skills exist in two locations:
+- `.agents/skills/*/SKILL.md` — for Codex CLI
+- `.gemini/skills/*/SKILL.md` — for Gemini CLI
 
 Use:
 - `conspector-structure` when prompt includes transcript-to-note transformation.
@@ -152,3 +217,4 @@ Hard rules for these generation tasks:
 - Do not invent facts, sources, dates, terms, or speaker claims.
 - Preserve uncertainty explicitly in an `Открытые вопросы` section.
 - Keep formatting simple and Notion-friendly (headings, lists, quotes, code fences, tables).
+

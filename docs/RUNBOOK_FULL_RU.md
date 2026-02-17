@@ -57,9 +57,18 @@ chmod +x run.sh
 - `CONSPECTOR_STT_PRIMARY=groq`
 - `CONSPECTOR_STT_FALLBACK=whispercpp`
 - `CONSPECTOR_STT_FALLBACK_TO_MOCK=false`
-- `CONSPECTOR_CODEX_MODE=real`
+- `CONSPECTOR_LLM_PROVIDER=codex` (или `gemini`)
+- `CONSPECTOR_CODEX_MODE=real` (если provider=codex)
 - `CONSPECTOR_CODEX_EFFORT=medium` (или `low/high`)
+- `CONSPECTOR_GEMINI_MODE=real` (если provider=gemini)
+- `CONSPECTOR_GEMINI_MODEL=gemini-3-flash-preview`
 - `CONSPECTOR_NOTION_MODE=real` (если нужен writeback)
+
+Если используете Gemini CLI:
+
+```bash
+./run.sh --setup-gemini
+```
 
 ## 4. Вы правильно получаете Groq key?
 

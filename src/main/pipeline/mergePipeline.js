@@ -2,7 +2,7 @@ import path from 'node:path';
 import { normalizeToFlac } from '../audio/ffmpeg.js';
 import { ControlledError } from '../utils/errors.js';
 import { runSttDiarization } from '../workers/sttWorker.js';
-import { runCodexMerge, runCodexStructure } from '../workers/codexWorker.js';
+import { getStructureWorker, getMergeWorker, getLlmConfigKey } from '../workers/llmProvider.js';
 import { renderEmergencyHtml, renderHtmlFromMarkdown } from '../workers/htmlWorker.js';
 import { writeMergedToNotion } from '../workers/notionWorker.js';
 
@@ -73,8 +73,7 @@ export function createMergePipeline(deps) {
           db.updateRecordingNormalization(recording.id, normalizedAudioPath);
         } catch (error) {
           appendWarning(
-            `normalize_audio failed, using original source path: ${
-              error instanceof Error ? error.message : 'unknown error'
+            `normalize_audio failed, using original source path: ${error instanceof Error ? error.message : 'unknown error'
             }`
           );
           db.updateRecordingNormalization(recording.id, recording.managed_audio_path);
@@ -116,8 +115,7 @@ export function createMergePipeline(deps) {
           }
 
           appendWarning(
-            `stt_diarization failed, fallback to mock transcript: ${
-              error instanceof Error ? error.message : 'unknown error'
+            `stt_diarization failed, fallback to mock transcript: ${error instanceof Error ? error.message : 'unknown error'
             }`
           );
           await runSttDiarization({
@@ -133,31 +131,33 @@ export function createMergePipeline(deps) {
       });
 
       await stage('codex_structure', async () => {
+        const llmConfigKey = getLlmConfigKey(runtimeConfig.llm.provider);
+        const llmConfig = runtimeConfig[llmConfigKey];
+        const runStructure = getStructureWorker(runtimeConfig.llm.provider);
         try {
-          await runCodexStructure({
+          await runStructure({
             transcriptPath,
             structuredPath,
             recording,
-            codexConfig: runtimeConfig.codex
+            llmConfig
           });
         } catch (error) {
           const canFallback =
-            runtimeConfig.resilience.codexFallbackToMock && runtimeConfig.codex.mode === 'real';
+            runtimeConfig.resilience.codexFallbackToMock && llmConfig.mode === 'real';
           if (!canFallback) {
             throw error;
           }
 
           appendWarning(
-            `codex_structure failed, fallback to mock: ${
-              error instanceof Error ? error.message : 'unknown error'
+            `codex_structure failed, fallback to mock: ${error instanceof Error ? error.message : 'unknown error'
             }`
           );
-          await runCodexStructure({
+          await runStructure({
             transcriptPath,
             structuredPath,
             recording,
-            codexConfig: {
-              ...runtimeConfig.codex,
+            llmConfig: {
+              ...llmConfig,
               mode: 'mock'
             }
           });
@@ -165,16 +165,19 @@ export function createMergePipeline(deps) {
       });
 
       await stage('merge', async () => {
+        const llmConfigKey = getLlmConfigKey(runtimeConfig.llm.provider);
+        const llmConfig = runtimeConfig[llmConfigKey];
+        const runMerge = getMergeWorker(runtimeConfig.llm.provider);
         try {
-          await runCodexMerge({
+          await runMerge({
             structuredPath,
             mergedPath,
             recording,
-            codexConfig: runtimeConfig.codex
+            llmConfig
           });
         } catch (error) {
           const canFallback =
-            runtimeConfig.resilience.codexFallbackToMock && runtimeConfig.codex.mode === 'real';
+            runtimeConfig.resilience.codexFallbackToMock && llmConfig.mode === 'real';
           if (!canFallback) {
             throw error;
           }
@@ -182,12 +185,12 @@ export function createMergePipeline(deps) {
           appendWarning(
             `merge failed, fallback to mock: ${error instanceof Error ? error.message : 'unknown error'}`
           );
-          await runCodexMerge({
+          await runMerge({
             structuredPath,
             mergedPath,
             recording,
-            codexConfig: {
-              ...runtimeConfig.codex,
+            llmConfig: {
+              ...llmConfig,
               mode: 'mock'
             }
           });
@@ -207,8 +210,7 @@ export function createMergePipeline(deps) {
           }
 
           appendWarning(
-            `render_html failed, emergency html generated: ${
-              error instanceof Error ? error.message : 'unknown error'
+            `render_html failed, emergency html generated: ${error instanceof Error ? error.message : 'unknown error'
             }`
           );
 
@@ -221,8 +223,7 @@ export function createMergePipeline(deps) {
             });
           } catch (emergencyError) {
             appendWarning(
-              `emergency html generation failed: ${
-                emergencyError instanceof Error ? emergencyError.message : 'unknown error'
+              `emergency html generation failed: ${emergencyError instanceof Error ? emergencyError.message : 'unknown error'
               }`
             );
           }
@@ -247,8 +248,7 @@ export function createMergePipeline(deps) {
             throw error;
           }
           appendWarning(
-            `notion_writeback skipped after error: ${
-              error instanceof Error ? error.message : 'unknown error'
+            `notion_writeback skipped after error: ${error instanceof Error ? error.message : 'unknown error'
             }`
           );
         }

@@ -17,7 +17,8 @@ const PATH_DEFAULTS = {
   CONSPECTOR_WHISPERCPP_MODEL_PATH: path.join(rootDir, 'models', 'ggml-base.bin'),
   CONSPECTOR_STT_PYTHON: path.join(rootDir, '.venv-stt', 'bin', 'python'),
   CONSPECTOR_STT_SCRIPT: path.join(rootDir, 'scripts', 'run_stt_diarization.py'),
-  CONSPECTOR_CODEX_WORKDIR: rootDir
+  CONSPECTOR_CODEX_WORKDIR: rootDir,
+  CONSPECTOR_GEMINI_WORKDIR: rootDir
 };
 
 function pass(text) {
@@ -268,6 +269,8 @@ function main() {
   const sttPrimary = validateEnum(issues, updates, env, 'CONSPECTOR_STT_PRIMARY', ['groq', 'whispercpp'], 'groq');
   const sttFallback = validateEnum(issues, updates, env, 'CONSPECTOR_STT_FALLBACK', ['whispercpp', 'none'], 'whispercpp');
   const codexMode = validateEnum(issues, updates, env, 'CONSPECTOR_CODEX_MODE', ['real', 'mock'], 'real');
+  const llmProvider = validateEnum(issues, updates, env, 'CONSPECTOR_LLM_PROVIDER', ['codex', 'gemini'], 'codex');
+  const geminiMode = validateEnum(issues, updates, env, 'CONSPECTOR_GEMINI_MODE', ['real', 'mock'], 'real');
   const notionMode = validateEnum(issues, updates, env, 'CONSPECTOR_NOTION_MODE', ['off', 'real'], 'off');
 
   validatePositiveInt(issues, env, 'CONSPECTOR_STT_TIMEOUT_SEC', 1800, 1);
@@ -275,6 +278,7 @@ function main() {
   validatePositiveInt(issues, env, 'CONSPECTOR_GROQ_CHUNK_MIN', 18, 1);
   validatePositiveInt(issues, env, 'CONSPECTOR_WHISPERCPP_THREADS', 2, 1);
   validatePositiveInt(issues, env, 'CONSPECTOR_CODEX_TIMEOUT_SEC', 600, 1);
+  validatePositiveInt(issues, env, 'CONSPECTOR_GEMINI_TIMEOUT_SEC', 600, 1);
   validatePositiveInt(issues, env, 'CONSPECTOR_WEB_SESSION_DAYS', 30, 1);
   validatePositiveInt(issues, env, 'CONSPECTOR_WEB_PORT', 8787, 1);
 
@@ -285,7 +289,8 @@ function main() {
     'CONSPECTOR_NOTION_MERGE_WITH_EXISTING',
     'CONSPECTOR_NOTION_SOFT_FAIL',
     'CONSPECTOR_HTML_SOFT_FAIL',
-    'CONSPECTOR_PREFLIGHT_STRICT'
+    'CONSPECTOR_PREFLIGHT_STRICT',
+    'CONSPECTOR_GEMINI_SANDBOX'
   ]);
 
   checkTrimmedSecrets(issues, env, ['CONSPECTOR_GROQ_API_KEY', 'GROQ_API_KEY', 'NOTION_TOKEN']);
@@ -360,6 +365,36 @@ function main() {
           message: `.agents/skills not found in ${workdir}`,
           suggestion: `CONSPECTOR_CODEX_WORKDIR=${rootDir}`,
           autofix: rootDir
+        });
+      }
+    }
+  }
+
+  if (llmProvider === 'gemini' && geminiMode === 'real') {
+    const workdir = normalizeProjectPath(env.CONSPECTOR_GEMINI_WORKDIR || PATH_DEFAULTS.CONSPECTOR_GEMINI_WORKDIR);
+    if (!fs.existsSync(workdir)) {
+      issues.push({
+        level: 'fail',
+        key: 'CONSPECTOR_GEMINI_WORKDIR',
+        message: `directory not found: ${workdir}`,
+        suggestion: `CONSPECTOR_GEMINI_WORKDIR=${rootDir}`,
+        autofix: rootDir
+      });
+    } else {
+      if (!fs.existsSync(path.join(workdir, '.gemini', 'GEMINI.md'))) {
+        issues.push({
+          level: 'warn',
+          key: 'CONSPECTOR_GEMINI_WORKDIR',
+          message: `.gemini/GEMINI.md not found in ${workdir} — run ./scripts/setup-gemini-skills.sh`,
+          suggestion: `CONSPECTOR_GEMINI_WORKDIR=${rootDir}`
+        });
+      }
+      if (!fs.existsSync(path.join(workdir, '.gemini', 'skills'))) {
+        issues.push({
+          level: 'warn',
+          key: 'CONSPECTOR_GEMINI_WORKDIR',
+          message: `.gemini/skills not found in ${workdir} — run ./scripts/setup-gemini-skills.sh`,
+          suggestion: `CONSPECTOR_GEMINI_WORKDIR=${rootDir}`
         });
       }
     }

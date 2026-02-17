@@ -62,7 +62,7 @@
 - `workspace id` не равен `page id`;
 - в проекте используется именно page root (где лежат ваши предметы/подстраницы).
 
-## 2.3 Codex CLI auth (для structuring/merge)
+## 2.3 Codex CLI auth (для structuring/merge, provider=codex)
 
 Зачем:
 - формирование структурированного markdown;
@@ -73,13 +73,32 @@
 1. Установите `codex` CLI.
 2. Запустите `codex` в терминале и пройдите auth (ChatGPT account или API key).
 3. В `.env`:
+   - `CONSPECTOR_LLM_PROVIDER=codex`
    - `CONSPECTOR_CODEX_MODE=real`
    - `CONSPECTOR_CODEX_EFFORT=low|medium|high`
 
 Официальная ссылка:
 - [OpenAI Codex CLI](https://developers.openai.com/codex/cli)
 
-## 2.4 HuggingFace token (legacy-only, не обязателен для STT v2)
+## 2.4 Gemini CLI auth (для structuring/merge, provider=gemini)
+
+Зачем:
+- альтернативный LLM-бэкенд для формирования/merge конспекта;
+- работает параллельно с Codex, переключение через одну переменную.
+
+Как подключить:
+1. Установите Gemini CLI (`npm install -g @anthropic-ai/gemini-cli` или другой метод).
+2. Пройдите OAuth авторизацию: `gemini auth login`.
+3. Настройки хранятся в `~/.gemini/settings.json`. API-ключ в `.env` **не нужен**.
+4. Запустите настройку skills:
+   - `./run.sh --setup-gemini`
+   - или: `./scripts/setup-gemini-skills.sh`
+5. В `.env`:
+   - `CONSPECTOR_LLM_PROVIDER=gemini`
+   - `CONSPECTOR_GEMINI_MODE=real`
+   - `CONSPECTOR_GEMINI_MODEL=gemini-3-flash-preview`
+
+## 2.5 HuggingFace token (legacy-only, не обязателен для STT v2)
 
 Нужен только если вы запускаете legacy-скрипт `scripts/run_stt_diarization.py` (WhisperX + diarization).
 
@@ -100,7 +119,9 @@
 - `CONSPECTOR_STT_PRIMARY=groq`
 - `CONSPECTOR_STT_FALLBACK=whispercpp`
 - `CONSPECTOR_STT_FALLBACK_TO_MOCK=false`
-- `CONSPECTOR_CODEX_MODE=real`
+- `CONSPECTOR_LLM_PROVIDER=codex` (или `gemini`)
+- `CONSPECTOR_CODEX_MODE=real` (если provider=codex)
+- `CONSPECTOR_GEMINI_MODE=real` (если provider=gemini)
 - `CONSPECTOR_NOTION_MODE=real` (если нужен writeback)
 
 Почему:

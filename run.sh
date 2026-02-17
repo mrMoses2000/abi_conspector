@@ -134,6 +134,15 @@ ensure_env_file() {
   echo "Created empty $ENV_FILE"
 }
 
+ensure_npm_deps() {
+  if [[ -d "$ROOT_DIR/node_modules" ]]; then
+    return
+  fi
+  echo "node_modules not found. Running npm install..."
+  npm install --production=false
+  echo "npm install complete."
+}
+
 normalize_project_path_value() {
   local value="$1"
   value="$(strip_outer_quotes "$value")"
@@ -184,6 +193,7 @@ run_fix_env_paths() {
     "CONSPECTOR_STT_PYTHON"
     "CONSPECTOR_STT_SCRIPT"
     "CONSPECTOR_CODEX_WORKDIR"
+    "CONSPECTOR_GEMINI_WORKDIR"
   )
 
   for key in "${keys[@]}"; do
@@ -194,6 +204,7 @@ run_fix_env_paths() {
       CONSPECTOR_STT_PYTHON) fallback="$ROOT_DIR/.venv-stt/bin/python" ;;
       CONSPECTOR_STT_SCRIPT) fallback="$ROOT_DIR/scripts/run_stt_diarization.py" ;;
       CONSPECTOR_CODEX_WORKDIR) fallback="$ROOT_DIR" ;;
+      CONSPECTOR_GEMINI_WORKDIR) fallback="$ROOT_DIR" ;;
       *) fallback='' ;;
     esac
 
@@ -430,8 +441,54 @@ run_configure_env() {
   echo
 }
 
+run_setup_all() {
+  echo
+  echo "==> Full server setup (all dependencies)"
+  echo
+
+  # 1. Node.js
+  ensure_node_runtime_if_needed "setup-all"
+  echo "[1/7] Node.js ready: $(node -v)"
+
+  # 2. npm install
+  ensure_npm_deps
+  echo "[2/7] npm dependencies ready."
+
+  # 3. Bootstrap (ffmpeg, whisper.cpp, model)
+  scripts/bootstrap.sh
+  echo "[3/7] Bootstrap complete (ffmpeg, whisper.cpp, model)."
+
+  # 4. .env
+  ensure_env_file
+  echo "[4/7] .env file ready."
+
+  # 5. Fix paths
+  run_fix_env_paths "silent"
+  echo "[5/7] .env paths auto-fixed."
+
+  # 6. Gemini skills
+  if [[ -x "$ROOT_DIR/scripts/setup-gemini-skills.sh" ]]; then
+    bash "$ROOT_DIR/scripts/setup-gemini-skills.sh"
+    echo "[6/7] Gemini CLI skills ready."
+  else
+    echo "[6/7] Gemini skills setup skipped (script not found)."
+  fi
+
+  # 7. Env doctor
+  echo "[7/7] Running env doctor..."
+  node scripts/env-doctor.js || true
+
+  echo
+  echo "Setup complete! Next steps:"
+  echo "  1) Edit .env — add CONSPECTOR_GROQ_API_KEY and choose CONSPECTOR_LLM_PROVIDER"
+  echo "  2) Run:  ./run.sh --web"
+  echo
+}
+
 run_bootstrap() {
   local mode="${1:-prompt}"
+  ensure_node_runtime_if_needed "bootstrap"
+  ensure_npm_deps
   if [[ "$OS_NAME" == "Linux" && "$mode" == "web" ]]; then
     scripts/bootstrap.sh --ubuntu-web
     return
@@ -448,6 +505,7 @@ run_bootstrap() {
 
 run_preflight() {
   ensure_node_runtime_if_needed "preflight"
+  ensure_npm_deps
   local mode="${1:-prompt}"
   if [[ "$mode" == "strict" ]]; then
     CONSPECTOR_PREFLIGHT_STRICT=true npm run preflight
@@ -467,21 +525,25 @@ run_preflight() {
 
 run_desktop() {
   ensure_node_runtime_if_needed "desktop"
+  ensure_npm_deps
   npm start
 }
 
 run_desktop_real() {
   ensure_node_runtime_if_needed "desktop-real"
+  ensure_npm_deps
   npm run start:real
 }
 
 run_web() {
   ensure_node_runtime_if_needed "web"
+  ensure_npm_deps
   npm run start:web
 }
 
 run_tests() {
   ensure_node_runtime_if_needed "test"
+  ensure_npm_deps
   npm test
 }
 
@@ -495,13 +557,74 @@ run_env_doctor() {
   node scripts/env-doctor.js
 }
 
-run_ubuntu_web_stack() {
+install_docker_ubuntu() {
+  echo "Installing Docker Engine for Ubuntu..."
+  sudo apt-get update
+  sudo apt-get install -y ca-certificates curl gnupg
+  sudo install -m 0755 -d /etc/apt/keyrings
+  if [[ ! -f /etc/apt/keyrings/docker.gpg ]]; then
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  fi
+  sudo chmod a+r /etc/apt/keyrings/docker.gpg
+  echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+    $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+  sudo apt-get update
+  sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
+ensure_docker_ready() {
   if [[ "$OS_NAME" != "Linux" ]]; then
-    echo "Ubuntu web stack is only available on Linux."
+    if ! command -v docker >/dev/null 2>&1; then
+      echo "Docker is required but not installed."
+      echo "Install Docker Desktop for macOS: https://docs.docker.com/desktop/install/mac-install/"
+      exit 1
+    fi
     return
   fi
+
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker is not installed."
+    if ask_yes_no "Install Docker Engine now (Ubuntu/apt)?" "y"; then
+      install_docker_ubuntu
+    else
+      echo "Docker is required. Install manually and retry."
+      exit 1
+    fi
+  fi
+
+  if ! docker info >/dev/null 2>&1; then
+    echo "Docker daemon is not running. Starting..."
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    sleep 2
+    if ! docker info >/dev/null 2>&1; then
+      echo "Failed to start Docker daemon."
+      exit 1
+    fi
+    echo "Docker daemon started."
+  fi
+
+  if ! groups "$USER" | grep -q '\bdocker\b'; then
+    echo "Adding $USER to docker group..."
+    sudo usermod -aG docker "$USER"
+    echo "Added. You may need to log out and back in for group changes to take effect."
+  fi
+}
+
+run_ubuntu_web_stack() {
+  ensure_docker_ready
   docker compose -f deploy/ubuntu-web/docker-compose.yml up -d
   echo "Ubuntu web stack is up."
+}
+
+run_setup_gemini() {
+  if [[ ! -x "$ROOT_DIR/scripts/setup-gemini-skills.sh" ]]; then
+    echo "Error: scripts/setup-gemini-skills.sh not found or not executable."
+    exit 1
+  fi
+  bash "$ROOT_DIR/scripts/setup-gemini-skills.sh"
 }
 
 show_menu() {
@@ -516,7 +639,9 @@ show_menu() {
 8) Start web app (accounts/roles/shared view)
 9) Run tests
 10) Start Ubuntu web stack (Docker + Nginx)
-11) Exit
+11) Setup Gemini CLI skills
+12) FULL SETUP (all deps + env + bootstrap)
+13) Exit
 MSG
 }
 
@@ -524,7 +649,7 @@ run_interactive() {
   print_header
   while true; do
     show_menu
-    read -r -p "Choose action [1-11]: " choice
+    read -r -p "Choose action [1-13]: " choice
     case "$choice" in
       1) run_configure_env ;;
       2) run_fix_env_paths "verbose" ;;
@@ -536,7 +661,9 @@ run_interactive() {
       8) run_web ;;
       9) run_tests ;;
       10) run_ubuntu_web_stack ;;
-      11) exit 0 ;;
+      11) run_setup_gemini ;;
+      12) run_setup_all ;;
+      13) exit 0 ;;
       *) echo "Unknown option: $choice" ;;
     esac
   done
@@ -559,6 +686,8 @@ Usage:
   ./run.sh --web
   ./run.sh --test
   ./run.sh --ubuntu-web-stack
+  ./run.sh --setup-gemini
+  ./run.sh --setup-all       # FULL SETUP: node, npm, bootstrap, env, skills
   ./run.sh --help
 MSG
 }
@@ -582,6 +711,8 @@ case "${1:-}" in
   --web) run_web ;;
   --test) run_tests ;;
   --ubuntu-web-stack) run_ubuntu_web_stack ;;
+  --setup-gemini) run_setup_gemini ;;
+  --setup-all) run_setup_all ;;
   --help|-h) print_help ;;
   *)
     echo "Unknown argument: $1"

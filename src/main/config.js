@@ -53,6 +53,8 @@ export function getRuntimeConfig() {
   const projectRoot = process.cwd();
   const sttMode = process.env.CONSPECTOR_STT_MODE === 'mock' ? 'mock' : 'real';
   const codexMode = process.env.CONSPECTOR_CODEX_MODE === 'mock' ? 'mock' : 'real';
+  const geminiMode = process.env.CONSPECTOR_GEMINI_MODE === 'mock' ? 'mock' : 'real';
+  const llmProvider = parseEnum(process.env.CONSPECTOR_LLM_PROVIDER, ['codex', 'gemini'], 'codex');
   const notionMode = process.env.CONSPECTOR_NOTION_MODE === 'real' ? 'real' : 'off';
   const sttPrimary = parseEnum(process.env.CONSPECTOR_STT_PRIMARY, ['groq', 'whispercpp'], 'groq');
   const sttFallback = parseEnum(process.env.CONSPECTOR_STT_FALLBACK, ['whispercpp', 'none'], 'whispercpp');
@@ -79,6 +81,9 @@ export function getRuntimeConfig() {
         process.env.CONSPECTOR_WHISPERCPP_MODEL_PATH || path.join(projectRoot, 'models', 'ggml-base.bin'),
       whisperCppThreads: parseIntSafe(process.env.CONSPECTOR_WHISPERCPP_THREADS, 2)
     },
+    llm: {
+      provider: llmProvider
+    },
     codex: {
       mode: codexMode,
       fullAuto: parseBoolean(process.env.CONSPECTOR_CODEX_FULL_AUTO, true),
@@ -87,6 +92,14 @@ export function getRuntimeConfig() {
       timeoutMs: parseIntSafe(process.env.CONSPECTOR_CODEX_TIMEOUT_SEC, 600) * 1000,
       workdir: process.env.CONSPECTOR_CODEX_WORKDIR || projectRoot,
       sourceNotePath: process.env.CONSPECTOR_SOURCE_NOTE_PATH || ''
+    },
+    gemini: {
+      mode: geminiMode,
+      model: process.env.CONSPECTOR_GEMINI_MODEL || 'gemini-3-flash-preview',
+      timeoutMs: parseIntSafe(process.env.CONSPECTOR_GEMINI_TIMEOUT_SEC, 600) * 1000,
+      workdir: process.env.CONSPECTOR_GEMINI_WORKDIR || projectRoot,
+      sourceNotePath: process.env.CONSPECTOR_SOURCE_NOTE_PATH || '',
+      sandbox: parseBoolean(process.env.CONSPECTOR_GEMINI_SANDBOX, false)
     },
     notion: {
       mode: notionMode,

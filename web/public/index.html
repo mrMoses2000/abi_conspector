@@ -3,13 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0d1117" />
+    <meta name="description" content="ABI Conspector — управление лекционными конспектами" />
     <title>ABI Conspector Web</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <main class="layout">
       <section id="auth-card" class="card">
-        <h1>ABI Conspector Web</h1>
+        <h1>ABI Conspector</h1>
         <p class="muted">Вход и регистрация. Все пользователи видят общий список готовых конспектов.</p>
         <div class="tabs">
           <button id="tab-login" class="tab active" type="button">Вход</button>
@@ -19,11 +22,11 @@
         <form id="login-form" class="form">
           <label>
             Email
-            <input id="login-email" type="email" required />
+            <input id="login-email" type="email" required placeholder="user@example.com" />
           </label>
           <label>
             Пароль
-            <input id="login-password" type="password" required minlength="8" />
+            <input id="login-password" type="password" required minlength="8" placeholder="••••••••" />
           </label>
           <button class="btn primary" type="submit">Войти</button>
         </form>
@@ -31,11 +34,11 @@
         <form id="register-form" class="form hidden">
           <label>
             Email
-            <input id="register-email" type="email" required />
+            <input id="register-email" type="email" required placeholder="user@example.com" />
           </label>
           <label>
             Пароль (минимум 8 символов)
-            <input id="register-password" type="password" required minlength="8" />
+            <input id="register-password" type="password" required minlength="8" placeholder="••••••••" />
           </label>
           <button class="btn primary" type="submit">Создать аккаунт</button>
         </form>
@@ -50,7 +53,7 @@
             <p id="user-line" class="muted"></p>
           </div>
           <div class="actions">
-            <button id="refresh-btn" class="btn secondary" type="button">Обновить</button>
+            <button id="refresh-btn" class="btn secondary" type="button">⟳ Обновить</button>
             <button id="logout-btn" class="btn ghost" type="button">Выйти</button>
           </div>
         </div>
@@ -72,7 +75,7 @@
       </section>
 
       <section id="admin-card" class="card hidden">
-        <h2>Admin</h2>
+        <h2>Панель администратора</h2>
         <p class="muted">Управление пользователями и ручной writeback в Notion.</p>
 
         <form id="notion-form" class="form inline">
@@ -105,4 +108,3 @@
     <script src="./app.js"></script>
   </body>
 </html>
-
