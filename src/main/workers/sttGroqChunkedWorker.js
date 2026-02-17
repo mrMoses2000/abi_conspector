@@ -51,34 +51,51 @@ function toSegmentsFromVerboseJson(payload, offsetSec = 0) {
 }
 
 async function transcribeSingleFileViaGroq({ filePath, apiKey, language, model, onLog }) {
-  const form = new FormData();
-  form.set('model', model);
-  form.set('language', language || 'ru');
-  form.set('response_format', 'text');
-  const fileBlob = await openAsBlob(filePath);
-  form.set('file', fileBlob, path.basename(filePath));
+  const maxRetries = 3;
+  const baseDelaySec = 15;
 
-  const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`
-    },
-    body: form
-  });
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const form = new FormData();
+    form.set('model', model);
+    form.set('language', language || 'ru');
+    form.set('response_format', 'text');
+    const fileBlob = await openAsBlob(filePath);
+    form.set('file', fileBlob, path.basename(filePath));
 
-  const bodyText = await response.text();
-  if (typeof onLog === 'function') {
-    onLog('stdout', `groq status=${response.status} file=${path.basename(filePath)}\n`);
+    const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: form
+    });
+
+    const bodyText = await response.text();
+    if (typeof onLog === 'function') {
+      onLog('stdout', `groq status=${response.status} file=${path.basename(filePath)} attempt=${attempt + 1}\n`);
+    }
+
+    // Retry on rate limit
+    if (response.status === 429 && attempt < maxRetries) {
+      const delaySec = baseDelaySec * Math.pow(2, attempt);
+      if (typeof onLog === 'function') {
+        onLog('stdout', `groq 429 rate limit, retrying in ${delaySec}s (attempt ${attempt + 1}/${maxRetries})\n`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new ControlledError(
+        'GROQ_STT_FAILED',
+        `Groq STT failed with status ${response.status}: ${bodyText.slice(0, 280)}`
+      );
+    }
+
+    return bodyText.trim();
   }
 
-  if (!response.ok) {
-    throw new ControlledError(
-      'GROQ_STT_FAILED',
-      `Groq STT failed with status ${response.status}: ${bodyText.slice(0, 280)}`
-    );
-  }
-
-  return bodyText.trim();
+  throw new ControlledError('GROQ_STT_FAILED', 'Groq STT failed after max retries (rate limited)');
 }
 
 async function encodeChunkMp3({ inputPath, outputPath, startSec, durationSec, bitrate }) {
@@ -139,7 +156,7 @@ export async function runGroqChunkedTranscription(payload) {
     throw new ControlledError('GROQ_API_KEY_MISSING', 'CONSPECTOR_GROQ_API_KEY (or GROQ_API_KEY) is not configured');
   }
 
-  const groqModel = String(sttConfig.groqModel || 'whisper-large-v3-turbo').trim();
+  const groqModel = String(sttConfig.groqModel || 'whisper-large-v3').trim();
   const maxBytes = mbToBytes(sttConfig.groqMaxFileMb);
 
   if (typeof onProgress === 'function') {

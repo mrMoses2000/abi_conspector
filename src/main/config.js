@@ -73,7 +73,7 @@ export function getRuntimeConfig() {
       language: process.env.CONSPECTOR_STT_LANGUAGE || 'ru',
       timeoutMs: parseIntSafe(process.env.CONSPECTOR_STT_TIMEOUT_SEC, 1800) * 1000,
       groqApiKey: process.env.CONSPECTOR_GROQ_API_KEY || process.env.GROQ_API_KEY || '',
-      groqModel: process.env.CONSPECTOR_GROQ_MODEL || 'whisper-large-v3-turbo',
+      groqModel: process.env.CONSPECTOR_GROQ_MODEL || 'whisper-large-v3',
       groqMaxFileMb: parseIntSafe(process.env.CONSPECTOR_GROQ_MAX_FILE_MB, 25),
       groqChunkMinutes: parseIntSafe(process.env.CONSPECTOR_GROQ_CHUNK_MIN, 18),
       whisperCppBin: process.env.CONSPECTOR_WHISPERCPP_BIN || 'whisper-cli',
