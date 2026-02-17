@@ -288,7 +288,11 @@ if (recovered > 0) {
 const pipeline = createMergePipeline({
   db: appDb,
   managedPaths,
-  runtimeConfig
+  runtimeConfig: {
+    ...runtimeConfig,
+    // Disable auto Notion writeback in pipeline — user triggers via button
+    notion: { ...runtimeConfig.notion, mode: 'off' }
+  }
 });
 
 const mergeQueue = new MergeQueue({
@@ -690,6 +694,38 @@ app.get('/api/admin/users', requireAuth, requireAdmin, (_req, res) => {
     createdAt: row.created_at
   }));
   res.json({ ok: true, users });
+});
+
+// ─── Delete a recording ───
+app.delete('/api/conspects/:recordingId', requireAuth, requireAdmin, async (req, res) => {
+  const recordingId = sanitizeRecordingId(req.params.recordingId);
+  if (!recordingId) {
+    return res.status(400).json({ ok: false, error: 'Invalid recordingId' });
+  }
+
+  try {
+    const result = appDb.deleteRecording(recordingId);
+    if (!result.deleted) {
+      return res.status(404).json({ ok: false, error: 'Recording not found' });
+    }
+
+    // Best-effort cleanup of associated files
+    const filesToDelete = [
+      path.join(managedPaths.transcripts, `${recordingId}.json`),
+      path.join(managedPaths.transcripts, `${recordingId}.json.stt.log`),
+      path.join(managedPaths.structured, `${recordingId}.md`),
+      path.join(managedPaths.structured, `${recordingId}.md.gemini.log`),
+      path.join(managedPaths.merged, `${recordingId}.md`),
+      path.join(managedPaths.html, `${recordingId}.html`)
+    ];
+    for (const fp of filesToDelete) {
+      await fsp.unlink(fp).catch(() => { });
+    }
+
+    res.json({ ok: true, recordingId });
+  } catch (error) {
+    res.status(500).json({ ok: false, error: error.message });
+  }
 });
 
 app.post('/api/admin/notion-writeback', requireAuth, requireAdmin, async (req, res) => {

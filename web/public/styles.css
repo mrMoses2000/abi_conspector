@@ -272,10 +272,16 @@ input:focus {
 }
 
 /* ─── Table ─── */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 16px;
+  table-layout: fixed;
 }
 
 th,
@@ -285,7 +291,41 @@ td {
   padding: 12px 8px;
   font-size: 13px;
   vertical-align: top;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
+
+/* Column widths */
+th:nth-child(1),
+td:nth-child(1) {
+  width: 30%;
+}
+
+/* ФАЙЛ */
+th:nth-child(2),
+td:nth-child(2) {
+  width: 10%;
+}
+
+/* СТАТУС */
+th:nth-child(3),
+td:nth-child(3) {
+  width: 10%;
+}
+
+/* ЭТАП */
+th:nth-child(4),
+td:nth-child(4) {
+  width: 28%;
+}
+
+/* WARNING */
+th:nth-child(5),
+td:nth-child(5) {
+  width: 22%;
+}
+
+/* ДЕЙСТВИЯ */
 
 th {
   color: var(--text-secondary);
@@ -309,6 +349,23 @@ tbody tr:nth-child(even) {
 
 tbody tr:nth-child(even):hover {
   background: rgba(99, 102, 241, 0.06);
+}
+
+/* Delete button */
+.btn-delete {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid rgba(248, 113, 113, 0.25);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.btn-delete:hover {
+  background: var(--danger-bg);
+  border-color: var(--danger);
 }
 
 /* ─── Badges ─── */

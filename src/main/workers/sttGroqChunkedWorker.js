@@ -54,7 +54,7 @@ async function transcribeSingleFileViaGroq({ filePath, apiKey, language, model, 
   const form = new FormData();
   form.set('model', model);
   form.set('language', language || 'ru');
-  form.set('response_format', 'verbose_json');
+  form.set('response_format', 'text');
   const fileBlob = await openAsBlob(filePath);
   form.set('file', fileBlob, path.basename(filePath));
 
@@ -78,14 +78,7 @@ async function transcribeSingleFileViaGroq({ filePath, apiKey, language, model, 
     );
   }
 
-  let parsed;
-  try {
-    parsed = JSON.parse(bodyText);
-  } catch {
-    throw new ControlledError('GROQ_STT_PARSE_FAILED', 'Groq response is not valid JSON');
-  }
-
-  return parsed;
+  return bodyText.trim();
 }
 
 async function encodeChunkMp3({ inputPath, outputPath, startSec, durationSec, bitrate }) {
@@ -165,14 +158,16 @@ export async function runGroqChunkedTranscription(payload) {
     if (typeof onProgress === 'function') {
       onProgress({ percent: 30, message: 'groq_upload_single' });
     }
-    const parsed = await transcribeSingleFileViaGroq({
+    const text = await transcribeSingleFileViaGroq({
       filePath: inputPath,
       apiKey: groqApiKey,
       language: sttConfig.language || 'ru',
       model: groqModel,
       onLog
     });
-    allSegments = toSegmentsFromVerboseJson(parsed, 0);
+    if (text) {
+      allSegments.push({ startSec: 0, endSec: 1, speakerId: 'SPEAKER_1', text });
+    }
   } else {
     const probe = await probeAudio(inputPath);
     if (!probe.durationSec || probe.durationSec <= 0) {
@@ -222,15 +217,16 @@ export async function runGroqChunkedTranscription(payload) {
           onProgress({ percent: before, message: `groq_chunk_${index + 1}_upload` });
         }
 
-        const parsed = await transcribeSingleFileViaGroq({
+        const text = await transcribeSingleFileViaGroq({
           filePath: chunkPath,
           apiKey: groqApiKey,
           language: sttConfig.language || 'ru',
           model: groqModel,
           onLog
         });
-        const segments = toSegmentsFromVerboseJson(parsed, startSec);
-        allSegments.push(...segments);
+        if (text) {
+          allSegments.push({ startSec, endSec: startSec + spanSec, speakerId: 'SPEAKER_1', text });
+        }
 
         if (typeof onProgress === 'function') {
           const after = 30 + Math.floor(((index + 1) / Math.max(1, totalChunks)) * 62);
@@ -238,7 +234,7 @@ export async function runGroqChunkedTranscription(payload) {
         }
       }
     } finally {
-      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+      await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => { });
     }
   }
 

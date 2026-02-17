@@ -282,6 +282,19 @@ function renderConspects(items) {
       actionsCell.appendChild(badge);
     }
 
+    // Delete button (admin only)
+    if (state.user?.role === 'admin') {
+      const delBtn = document.createElement('button');
+      delBtn.className = 'btn-delete';
+      delBtn.style.marginLeft = '6px';
+      delBtn.textContent = '🗑';
+      delBtn.title = 'Удалить запись';
+      delBtn.addEventListener('click', () => {
+        deleteConspect(item.recordingId, item.fileName);
+      });
+      actionsCell.appendChild(delBtn);
+    }
+
     row.append(fileCell, statusCell, stageCell, warningCell, actionsCell);
     refs.conspectsBody.appendChild(row);
   }
@@ -492,6 +505,22 @@ async function notionWriteback(recordingId, fileName) {
       return;
     }
     setStatus(refs.appStatus, `Ошибка writeback: ${error.message}`, true);
+  }
+}
+
+async function deleteConspect(recordingId, fileName) {
+  const label = fileName || recordingId;
+  if (!confirm(`Удалить "${label}" и все связанные файлы?`)) return;
+
+  setStatus(refs.appStatus, `Удаление ${label}...`);
+  try {
+    await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}`, {
+      method: 'DELETE'
+    });
+    setStatus(refs.appStatus, `Удалено: ${label}`);
+    await loadConspects();
+  } catch (error) {
+    setStatus(refs.appStatus, `Ошибка удаления: ${error.message}`, true);
   }
 }
 

@@ -344,6 +344,16 @@ export class AppDatabase {
   }
 
   /**
+   * Delete a single recording and all its jobs (CASCADE).
+   * @param {string} recordingId
+   * @returns {{ deleted: boolean }}
+   */
+  deleteRecording(recordingId) {
+    const info = this.deleteRecordingStmt.run(recordingId);
+    return { deleted: Number(info?.changes || 0) > 0 };
+  }
+
+  /**
    * Deletes all failed jobs and then removes recordings that no longer have jobs.
    * Returns deleted counts and orphan recording rows to allow file cleanup.
    */
