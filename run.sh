@@ -709,8 +709,7 @@ run_web() {
   # 3. Start Docker + Nginx reverse proxy
   echo "[2/3] Starting Nginx reverse proxy (Docker)..."
   ensure_docker_ready
-  CONSPECTOR_WEB_ROOT="$ROOT_DIR/web" \
-    sudo docker compose -f "$ROOT_DIR/deploy/ubuntu-web/docker-compose.yml" up -d
+  sudo docker compose -f "$ROOT_DIR/deploy/ubuntu-web/docker-compose.yml" up -d
 
   # 4. Done
   local server_ip
