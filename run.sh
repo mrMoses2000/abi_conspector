@@ -10,6 +10,7 @@ DEFAULT_WHISPER_BIN="$ROOT_DIR/tools/whisper.cpp/build/bin/whisper-cli"
 DEFAULT_WHISPER_MODEL="$ROOT_DIR/models/ggml-base.bin"
 
 OS_NAME="$(uname -s)"
+mkdir -p "$ROOT_DIR/logs"
 case "$OS_NAME" in
   Darwin)
     PLATFORM_LABEL="macOS"
@@ -665,7 +666,66 @@ run_desktop_real() {
 run_web() {
   ensure_node_runtime_if_needed "web"
   ensure_npm_deps
-  npm run start:web
+
+  if [[ "$OS_NAME" != "Linux" ]]; then
+    # macOS / dev mode — foreground
+    npm run start:web
+    return
+  fi
+
+  # ── Linux production mode ──
+  echo
+  echo "==> Starting ABI Conspector (production mode)"
+  echo
+
+  # 1. Stop previous instance if running
+  if [[ -f "$ROOT_DIR/.node.pid" ]]; then
+    local old_pid
+    old_pid="$(cat "$ROOT_DIR/.node.pid" 2>/dev/null || true)"
+    if [[ -n "$old_pid" ]] && kill -0 "$old_pid" 2>/dev/null; then
+      echo "Stopping previous Node.js instance (PID $old_pid)..."
+      kill "$old_pid" 2>/dev/null || true
+      sleep 1
+    fi
+    rm -f "$ROOT_DIR/.node.pid"
+  fi
+
+  # 2. Start Node.js backend in background
+  echo "[1/3] Starting Node.js backend on port 8787..."
+  nohup node -r dotenv/config web/server.js > "$ROOT_DIR/logs/web-server.log" 2>&1 &
+  local node_pid=$!
+  echo "$node_pid" > "$ROOT_DIR/.node.pid"
+  echo "  Node.js PID: $node_pid"
+  echo "  Logs: $ROOT_DIR/logs/web-server.log"
+
+  # Wait a moment for Node to start
+  sleep 2
+  if ! kill -0 "$node_pid" 2>/dev/null; then
+    echo "ERROR: Node.js failed to start. Check logs:"
+    tail -20 "$ROOT_DIR/logs/web-server.log" 2>/dev/null || true
+    return 1
+  fi
+
+  # 3. Start Docker + Nginx reverse proxy
+  echo "[2/3] Starting Nginx reverse proxy (Docker)..."
+  ensure_docker_ready
+  CONSPECTOR_WEB_ROOT="$ROOT_DIR/web" \
+    docker compose -f "$ROOT_DIR/deploy/ubuntu-web/docker-compose.yml" up -d
+
+  # 4. Done
+  local server_ip
+  server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'your-server-ip')"
+  echo
+  echo "[3/3] ABI Conspector is live!"
+  echo
+  echo "  Local:    http://localhost:8787"
+  echo "  External: http://${server_ip}"
+  echo
+  echo "  Manage:"
+  echo "    Logs:    tail -f $ROOT_DIR/logs/web-server.log"
+  echo "    Stop:    ./run.sh --stop-web"
+  echo "    Status:  ./run.sh --status-web"
+  echo
 }
 
 run_tests() {
@@ -754,6 +814,68 @@ run_setup_gemini() {
   bash "$ROOT_DIR/scripts/setup-gemini-skills.sh"
 }
 
+run_stop_web() {
+  echo "Stopping ABI Conspector..."
+
+  # Stop Node.js
+  if [[ -f "$ROOT_DIR/.node.pid" ]]; then
+    local pid
+    pid="$(cat "$ROOT_DIR/.node.pid" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+      echo "  Node.js (PID $pid) stopped."
+    else
+      echo "  Node.js was not running."
+    fi
+    rm -f "$ROOT_DIR/.node.pid"
+  else
+    echo "  No .node.pid file found."
+  fi
+
+  # Stop Docker Nginx
+  if command -v docker >/dev/null 2>&1 && docker ps -q -f name=abi-conspector-nginx 2>/dev/null | grep -q .; then
+    docker compose -f "$ROOT_DIR/deploy/ubuntu-web/docker-compose.yml" down
+    echo "  Nginx container stopped."
+  else
+    echo "  Nginx container was not running."
+  fi
+
+  echo "Done."
+}
+
+run_status_web() {
+  echo "=== ABI Conspector status ==="
+  echo
+
+  # Node.js
+  if [[ -f "$ROOT_DIR/.node.pid" ]]; then
+    local pid
+    pid="$(cat "$ROOT_DIR/.node.pid" 2>/dev/null || true)"
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      echo "  Node.js:  RUNNING (PID $pid)"
+    else
+      echo "  Node.js:  STOPPED (stale PID file)"
+    fi
+  else
+    echo "  Node.js:  STOPPED"
+  fi
+
+  # Nginx
+  if command -v docker >/dev/null 2>&1 && docker ps -q -f name=abi-conspector-nginx 2>/dev/null | grep -q .; then
+    echo "  Nginx:    RUNNING (container abi-conspector-nginx)"
+  else
+    echo "  Nginx:    STOPPED"
+  fi
+
+  # Logs
+  if [[ -f "$ROOT_DIR/logs/web-server.log" ]]; then
+    echo
+    echo "  Last 5 log lines:"
+    tail -5 "$ROOT_DIR/logs/web-server.log" | sed 's/^/    /'
+  fi
+  echo
+}
+
 show_menu() {
   cat <<'MSG'
 1) Configure .env (wizard)
@@ -763,12 +885,13 @@ show_menu() {
 5) Preflight check
 6) Start desktop app (Electron)
 7) Start desktop app (real mode)
-8) Start web app (accounts/roles/shared view)
+8) Start web app (Linux: full production stack)
 9) Run tests
-10) Start Ubuntu web stack (Docker + Nginx)
-11) Setup Gemini CLI skills
-12) FULL SETUP (all deps + env + bootstrap)
-13) Exit
+10) Setup Gemini CLI skills
+11) FULL SETUP (all deps + env + bootstrap)
+12) Stop web app
+13) Web app status
+14) Exit
 MSG
 }
 
@@ -776,7 +899,7 @@ run_interactive() {
   print_header
   while true; do
     show_menu
-    read -r -p "Choose action [1-13]: " choice
+    read -r -p "Choose action [1-14]: " choice
     case "$choice" in
       1) run_configure_env ;;
       2) run_fix_env_paths "verbose" ;;
@@ -787,10 +910,11 @@ run_interactive() {
       7) run_desktop_real ;;
       8) run_web ;;
       9) run_tests ;;
-      10) run_ubuntu_web_stack ;;
-      11) run_setup_gemini ;;
-      12) run_setup_all ;;
-      13) exit 0 ;;
+      10) run_setup_gemini ;;
+      11) run_setup_all ;;
+      12) run_stop_web ;;
+      13) run_status_web ;;
+      14) exit 0 ;;
       *) echo "Unknown option: $choice" ;;
     esac
   done
@@ -810,11 +934,12 @@ Usage:
   ./run.sh --preflight-strict
   ./run.sh --desktop
   ./run.sh --desktop-real
-  ./run.sh --web
+  ./run.sh --web               # Linux: full stack; macOS: dev mode
+  ./run.sh --stop-web           # stop Node.js + Nginx
+  ./run.sh --status-web         # check if running
   ./run.sh --test
-  ./run.sh --ubuntu-web-stack
   ./run.sh --setup-gemini
-  ./run.sh --setup-all       # FULL SETUP: node, npm, bootstrap, env, skills
+  ./run.sh --setup-all          # FULL SETUP: node, npm, bootstrap, env, skills
   ./run.sh --help
 MSG
 }
@@ -836,6 +961,8 @@ case "${1:-}" in
   --desktop) run_desktop ;;
   --desktop-real) run_desktop_real ;;
   --web) run_web ;;
+  --stop-web) run_stop_web ;;
+  --status-web) run_status_web ;;
   --test) run_tests ;;
   --ubuntu-web-stack) run_ubuntu_web_stack ;;
   --setup-gemini) run_setup_gemini ;;
