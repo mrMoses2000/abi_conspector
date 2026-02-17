@@ -493,7 +493,11 @@ app.post('/api/upload', requireAuth, upload.single('audio'), async (req, res) =>
   }
 
   try {
-    const ext = path.extname(req.file.originalname) || '.bin';
+    // Multer decodes multipart filenames as Latin-1; fix to UTF-8
+    let originalName = req.file.originalname;
+    try { originalName = Buffer.from(originalName, 'latin1').toString('utf8'); } catch { }
+
+    const ext = path.extname(originalName) || '.bin';
     const managedName = `${Date.now()}_${crypto.randomUUID()}${ext}`;
     const managedAudioPath = path.join(managedPaths.imports, managedName);
     await fsp.rename(req.file.path, managedAudioPath);
@@ -501,7 +505,7 @@ app.post('/api/upload', requireAuth, upload.single('audio'), async (req, res) =>
     const result = await ingestManagedAudio({
       managedAudioPath,
       sourceType: 'imported_file',
-      originalFileName: req.file.originalname,
+      originalFileName: originalName,
       originalFilePath: null,
       db: appDb,
       maxLectureSeconds: MAX_LECTURE_SECONDS,

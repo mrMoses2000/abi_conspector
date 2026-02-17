@@ -189,7 +189,7 @@ function renderConspects(items) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
     cell.colSpan = 5;
-    cell.textContent = 'Пока нет результатов. Добавьте аудио в desktop app.';
+    cell.textContent = 'Пока нет результатов. Загрузите аудио выше ↑';
     row.appendChild(cell);
     refs.conspectsBody.appendChild(row);
     return;
@@ -238,7 +238,14 @@ function renderConspects(items) {
     }
     const warningText = item.errorMessage || item.warning || '-';
     const warningLine = document.createElement('span');
-    warningLine.textContent = warningText;
+    const maxLen = 120;
+    if (warningText.length > maxLen) {
+      warningLine.textContent = warningText.slice(0, maxLen) + '...';
+      warningLine.title = warningText;
+      warningLine.style.cursor = 'help';
+    } else {
+      warningLine.textContent = warningText;
+    }
     warningCell.appendChild(warningLine);
 
     const actionsCell = document.createElement('td');
