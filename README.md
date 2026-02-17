@@ -33,6 +33,7 @@ chmod +x run.sh
 
 Interactive launcher provides one menu for:
 
+- `.env` setup wizard (no manual editing required)
 - bootstrap dependencies
 - preflight
 - desktop start
@@ -42,6 +43,7 @@ Interactive launcher provides one menu for:
 Non-interactive mode:
 
 ```bash
+./run.sh --configure-env
 ./run.sh --bootstrap
 ./run.sh --bootstrap-web
 ./run.sh --preflight
