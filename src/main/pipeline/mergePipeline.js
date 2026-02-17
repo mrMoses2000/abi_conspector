@@ -2,7 +2,7 @@ import path from 'node:path';
 import { normalizeToFlac } from '../audio/ffmpeg.js';
 import { ControlledError } from '../utils/errors.js';
 import { runSttDiarization } from '../workers/sttWorker.js';
-import { getStructureWorker, getMergeWorker, getLlmConfigKey } from '../workers/llmProvider.js';
+import { getStructureWorker, getMergeWorker, getMergeFromMarkdownWorker, getLlmConfigKey } from '../workers/llmProvider.js';
 import { renderEmergencyHtml, renderHtmlFromMarkdown } from '../workers/htmlWorker.js';
 import { writeMergedToNotion } from '../workers/notionWorker.js';
 
@@ -131,9 +131,9 @@ export function createMergePipeline(deps) {
       });
 
       await stage('codex_structure', async () => {
-        const llmConfigKey = getLlmConfigKey(runtimeConfig.llm.provider);
+        const llmConfigKey = getLlmConfigKey(runtimeConfig.llm?.provider || 'codex');
         const llmConfig = runtimeConfig[llmConfigKey];
-        const runStructure = getStructureWorker(runtimeConfig.llm.provider);
+        const runStructure = getStructureWorker(runtimeConfig.llm?.provider || 'codex');
         try {
           await runStructure({
             transcriptPath,
@@ -165,9 +165,9 @@ export function createMergePipeline(deps) {
       });
 
       await stage('merge', async () => {
-        const llmConfigKey = getLlmConfigKey(runtimeConfig.llm.provider);
+        const llmConfigKey = getLlmConfigKey(runtimeConfig.llm?.provider || 'codex');
         const llmConfig = runtimeConfig[llmConfigKey];
-        const runMerge = getMergeWorker(runtimeConfig.llm.provider);
+        const runMerge = getMergeWorker(runtimeConfig.llm?.provider || 'codex');
         try {
           await runMerge({
             structuredPath,
@@ -232,12 +232,15 @@ export function createMergePipeline(deps) {
 
       await stage('notion_writeback', async () => {
         try {
+          const llmProvider = runtimeConfig.llm?.provider || 'codex';
+          const llmConfigKey = getLlmConfigKey(llmProvider);
           const result = await writeMergedToNotion({
             mergedPath,
             recording,
             backupsDir: managedPaths.backups,
             notionConfig: runtimeConfig.notion,
-            codexConfig: runtimeConfig.codex
+            llmMergeFromMarkdown: getMergeFromMarkdownWorker(llmProvider),
+            llmConfig: runtimeConfig[llmConfigKey]
           });
 
           if (result?.warning) {

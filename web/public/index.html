@@ -52,10 +52,11 @@
     <section id="app-card" class="card hidden">
       <div class="header">
         <div>
-          <h2>Список конспектов</h2>
+          <h2>Загрузка и обработка</h2>
           <p id="user-line" class="muted"></p>
         </div>
         <div class="actions">
+          <button id="library-btn" class="btn accent" type="button">📚 Конспекты</button>
           <button id="refresh-btn" class="btn secondary" type="button">⟳ Обновить</button>
           <button id="logout-btn" class="btn ghost" type="button">Выйти</button>
         </div>
@@ -116,6 +117,32 @@
         </div>
       </div>
       <div id="viewer-content" class="viewer-content"></div>
+    </section>
+
+    <!-- Conspect library (dropdown + viewer) -->
+    <section id="library-card" class="card hidden library-card">
+      <div class="header">
+        <div>
+          <h2>📚 Библиотека конспектов</h2>
+        </div>
+        <div class="actions">
+          <button id="library-back" class="btn secondary" type="button">← Загрузки</button>
+        </div>
+      </div>
+      <div class="library-controls">
+        <label class="library-select-label">
+          Выберите конспект
+          <select id="library-select" class="library-select">
+            <option value="" disabled selected>— выберите конспект —</option>
+          </select>
+        </label>
+        <button id="library-download-md" class="btn ghost" type="button" disabled>⬇ Markdown</button>
+      </div>
+      <div id="library-content" class="viewer-content">
+        <div class="library-placeholder">
+          <p class="muted">Выберите конспект из списка выше</p>
+        </div>
+      </div>
     </section>
 
     <section id="admin-card" class="card hidden">

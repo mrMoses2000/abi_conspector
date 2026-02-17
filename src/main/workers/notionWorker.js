@@ -3,7 +3,6 @@ import path from 'node:path';
 import { Client } from '@notionhq/client';
 import { APIErrorCode, isNotionClientError } from '@notionhq/client';
 import { ControlledError } from '../utils/errors.js';
-import { runCodexMergeFromMarkdown } from './codexWorker.js';
 
 const APPEND_CHUNK_SIZE = 50;
 const MAX_NESTED_PAGES_SCAN = 400;
@@ -587,19 +586,18 @@ function normalizeNotionCodeLang(lang) {
  *     rootPageId?: string;
  *     mergeWithExisting?: boolean;
  *   };
- *   codexConfig?: {
- *     mode: 'real' | 'mock';
- *     fullAuto?: boolean;
- *     model: string;
- *     reasoningEffort?: string;
- *     timeoutMs: number;
- *     workdir: string;
- *     sourceNotePath: string;
- *   };
+ *   llmMergeFromMarkdown?: (payload: {
+ *     structuredMarkdown: string;
+ *     baseMarkdown: string;
+ *     outputPath: string;
+ *     recording: any;
+ *     llmConfig: any;
+ *   }) => Promise<void>;
+ *   llmConfig?: any;
  * }} payload
  */
 export async function writeMergedToNotion(payload) {
-  const { mergedPath, recording, backupsDir, notionConfig, codexConfig } = payload;
+  const { mergedPath, recording, backupsDir, notionConfig, llmMergeFromMarkdown, llmConfig } = payload;
   await fs.mkdir(backupsDir, { recursive: true });
   const notionLogPath = path.join(backupsDir, `${recording.id}.notion.log`);
   const logs = [];
@@ -607,7 +605,7 @@ export async function writeMergedToNotion(payload) {
     logs.push(`[${new Date().toISOString()}] ${message}`);
   };
   const flushLog = async () => {
-    await fs.writeFile(notionLogPath, `${logs.join('\n')}\n`, 'utf8').catch(() => {});
+    await fs.writeFile(notionLogPath, `${logs.join('\n')}\n`, 'utf8').catch(() => { });
   };
 
   try {
@@ -659,15 +657,15 @@ export async function writeMergedToNotion(payload) {
     let finalMarkdown = await fs.readFile(mergedPath, 'utf8');
     let warning = '';
 
-    if (notionConfig.mergeWithExisting && oldMarkdown.trim() && codexConfig) {
+    if (notionConfig.mergeWithExisting && oldMarkdown.trim() && llmMergeFromMarkdown && llmConfig) {
       const mergedFromNotionPath = path.join(backupsDir, `${recording.id}_merged_with_notion.md`);
       try {
-        await runCodexMergeFromMarkdown({
+        await llmMergeFromMarkdown({
           structuredMarkdown: finalMarkdown,
           baseMarkdown: oldMarkdown,
           outputPath: mergedFromNotionPath,
           recording,
-          codexConfig
+          llmConfig
         });
         finalMarkdown = await fs.readFile(mergedFromNotionPath, 'utf8');
         log(`merge-with-existing done: ${mergedFromNotionPath}`);
@@ -675,8 +673,8 @@ export async function writeMergedToNotion(payload) {
         warning = `Notion merge-with-existing skipped: ${error instanceof Error ? error.message : 'unknown error'}`;
         log(`merge-with-existing warning: ${warning}`);
       }
-    } else if (notionConfig.mergeWithExisting && oldMarkdown.trim() && !codexConfig) {
-      warning = 'Notion merge-with-existing requested but codex config is missing.';
+    } else if (notionConfig.mergeWithExisting && oldMarkdown.trim() && !llmMergeFromMarkdown) {
+      warning = 'Notion merge-with-existing requested but LLM merge function is not configured.';
       log(`merge-with-existing warning: ${warning}`);
     }
 

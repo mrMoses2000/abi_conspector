@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import multer from 'multer';
 import { writeMergedToNotion } from '../src/main/workers/notionWorker.js';
+import { getMergeFromMarkdownWorker, getLlmConfigKey } from '../src/main/workers/llmProvider.js';
 import { ControlledError, asIpcError } from '../src/main/utils/errors.js';
 import { AppDatabase } from '../src/main/db/database.js';
 import { MergeQueue } from '../src/main/pipeline/mergeQueue.js';
@@ -671,16 +672,17 @@ app.get('/api/conspects/:recordingId/html', requireAuth, (req, res) => {
     const recordingId = sanitizeRecordingId(req.params.recordingId);
     const htmlPath = path.resolve(dataRoot, 'html', `${recordingId}.html`);
     if (!fs.existsSync(htmlPath)) {
-      return res.status(404).json({ error: 'NOT_FOUND', message: 'HTML result not found' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'HTML result not found' } });
     }
     res.sendFile(htmlPath, (err) => {
       if (err && !res.headersSent) {
-        res.status(500).json({ error: 'SEND_FAILED', message: `Failed to send HTML: ${err.message}` });
+        res.status(500).json({ ok: false, error: { code: 'SEND_FAILED', message: `Failed to send HTML: ${err.message}` } });
       }
     });
   } catch (error) {
     if (!res.headersSent) {
-      res.status(error.httpStatus || 500).json({ error: error.code || 'INTERNAL', message: error.message });
+      const ipcError = asIpcError(error);
+      res.status(error instanceof ControlledError ? 400 : 500).json({ ok: false, error: ipcError });
     }
   }
 });
@@ -690,16 +692,17 @@ app.get('/api/conspects/:recordingId/md', requireAuth, (req, res) => {
     const recordingId = sanitizeRecordingId(req.params.recordingId);
     const mdPath = path.resolve(dataRoot, 'merged', `${recordingId}.md`);
     if (!fs.existsSync(mdPath)) {
-      return res.status(404).json({ error: 'NOT_FOUND', message: 'Markdown result not found' });
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Markdown result not found' } });
     }
     res.type('text/markdown').sendFile(mdPath, (err) => {
       if (err && !res.headersSent) {
-        res.status(500).json({ error: 'SEND_FAILED', message: `Failed to send MD: ${err.message}` });
+        res.status(500).json({ ok: false, error: { code: 'SEND_FAILED', message: `Failed to send MD: ${err.message}` } });
       }
     });
   } catch (error) {
     if (!res.headersSent) {
-      res.status(error.httpStatus || 500).json({ error: error.code || 'INTERNAL', message: error.message });
+      const ipcError = asIpcError(error);
+      res.status(error instanceof ControlledError ? 400 : 500).json({ ok: false, error: ipcError });
     }
   }
 });
@@ -802,15 +805,11 @@ app.post('/api/admin/notion-writeback', requireAuth, requireAdmin, async (req, r
       mergeWithExisting: parseBoolean(process.env.CONSPECTOR_NOTION_MERGE_WITH_EXISTING, true)
     };
 
-    const codexConfig = {
-      mode: process.env.CONSPECTOR_CODEX_MODE === 'mock' ? 'mock' : 'real',
-      fullAuto: parseBoolean(process.env.CONSPECTOR_CODEX_FULL_AUTO, true),
-      model: process.env.CONSPECTOR_CODEX_MODEL || '',
-      reasoningEffort: process.env.CONSPECTOR_CODEX_EFFORT || 'medium',
-      timeoutMs: Number.parseInt(process.env.CONSPECTOR_CODEX_TIMEOUT_SEC || '600', 10) * 1000,
-      workdir: process.env.CONSPECTOR_CODEX_WORKDIR || process.cwd(),
-      sourceNotePath: process.env.CONSPECTOR_SOURCE_NOTE_PATH || ''
-    };
+    // Determine LLM provider (gemini or codex) from pipeline config
+    const llmProvider = runtimeConfig.llm?.provider || 'codex';
+    const llmConfigKey = getLlmConfigKey(llmProvider);
+    const llmConfig = runtimeConfig[llmConfigKey];
+    const llmMergeFromMarkdown = getMergeFromMarkdownWorker(llmProvider);
 
     const backupsDir = path.join(dataRoot, 'backups');
     const result = await writeMergedToNotion({
@@ -818,7 +817,8 @@ app.post('/api/admin/notion-writeback', requireAuth, requireAdmin, async (req, r
       recording,
       backupsDir,
       notionConfig,
-      codexConfig
+      llmMergeFromMarkdown,
+      llmConfig
     });
 
     res.json({ ok: true, ...result });

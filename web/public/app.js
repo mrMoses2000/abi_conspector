@@ -41,7 +41,14 @@ const refs = {
   viewerTitle: document.getElementById('viewer-title'),
   viewerBack: document.getElementById('viewer-back'),
   viewerDownloadMd: document.getElementById('viewer-download-md'),
-  viewerContent: document.getElementById('viewer-content')
+  viewerContent: document.getElementById('viewer-content'),
+  // Library
+  libraryCard: document.getElementById('library-card'),
+  libraryBtn: document.getElementById('library-btn'),
+  libraryBack: document.getElementById('library-back'),
+  librarySelect: document.getElementById('library-select'),
+  libraryDownloadMd: document.getElementById('library-download-md'),
+  libraryContent: document.getElementById('library-content')
 };
 
 function setStatus(node, text, isError = false) {
@@ -66,6 +73,7 @@ function showAppScreen() {
   refs.authCard.classList.add('hidden');
   refs.appCard.classList.remove('hidden');
   refs.viewerCard.classList.add('hidden');
+  refs.libraryCard.classList.add('hidden');
   if (state.user?.role === 'admin') {
     refs.adminCard.classList.remove('hidden');
   } else {
@@ -76,11 +84,20 @@ function showAppScreen() {
 function showViewerScreen(title, recordingId) {
   refs.appCard.classList.add('hidden');
   refs.adminCard.classList.add('hidden');
+  refs.libraryCard.classList.add('hidden');
   refs.viewerCard.classList.remove('hidden');
   refs.viewerTitle.textContent = title || 'Конспект';
   refs.viewerContent.textContent = 'Загрузка...';
   state.viewingRecordingId = recordingId;
   loadConspectHtml(recordingId);
+}
+
+function showLibraryScreen() {
+  refs.appCard.classList.add('hidden');
+  refs.adminCard.classList.add('hidden');
+  refs.viewerCard.classList.add('hidden');
+  refs.libraryCard.classList.remove('hidden');
+  populateLibraryDropdown();
 }
 
 function showAppFromViewer() {
@@ -734,3 +751,96 @@ refs.viewerDownloadMd.addEventListener('click', async () => {
     setStatus(refs.appStatus, `Ошибка скачивания MD: ${error.message}`, true);
   }
 });
+
+// ─── Library tab ───
+
+function populateLibraryDropdown() {
+  const select = refs.librarySelect;
+  const current = select.value;
+
+  // clear old options
+  select.innerHTML = '<option value="" disabled selected>— выберите конспект —</option>';
+
+  const doneItems = (state.conspects || []).filter(
+    (item) => item.status === 'done' && item.htmlAvailable
+  );
+
+  if (doneItems.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.disabled = true;
+    opt.textContent = 'Нет готовых конспектов';
+    select.appendChild(opt);
+    refs.libraryDownloadMd.disabled = true;
+    return;
+  }
+
+  for (const item of doneItems) {
+    const opt = document.createElement('option');
+    opt.value = item.recordingId;
+    const name = item.fileName || item.recordingId;
+    const date = item.createdAt ? new Date(item.createdAt).toLocaleDateString('ru-RU') : '';
+    opt.textContent = date ? `${name}  ·  ${date}` : name;
+    select.appendChild(opt);
+  }
+
+  // restore selection if still exists
+  if (current && doneItems.some((i) => i.recordingId === current)) {
+    select.value = current;
+  }
+}
+
+async function loadLibraryConspect(recordingId) {
+  refs.libraryContent.textContent = 'Загрузка...';
+  refs.libraryDownloadMd.disabled = false;
+  state.libraryRecordingId = recordingId;
+  try {
+    const html = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/html`, {
+      responseType: 'text'
+    });
+    refs.libraryContent.textContent = '';
+    const iframe = document.createElement('iframe');
+    iframe.className = 'viewer-iframe';
+    iframe.sandbox = 'allow-same-origin';
+    iframe.srcdoc = html;
+    refs.libraryContent.appendChild(iframe);
+  } catch (error) {
+    refs.libraryContent.textContent = `Ошибка: ${error.message}`;
+  }
+}
+
+refs.libraryBtn.addEventListener('click', () => {
+  showLibraryScreen();
+});
+
+refs.libraryBack.addEventListener('click', () => {
+  refs.libraryCard.classList.add('hidden');
+  state.libraryRecordingId = null;
+  showAppScreen();
+});
+
+refs.librarySelect.addEventListener('change', () => {
+  const recordingId = refs.librarySelect.value;
+  if (recordingId) {
+    loadLibraryConspect(recordingId);
+  }
+});
+
+refs.libraryDownloadMd.addEventListener('click', async () => {
+  const recordingId = state.libraryRecordingId;
+  if (!recordingId) return;
+  try {
+    const blob = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/md`, {
+      responseType: 'blob'
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${recordingId}.md`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  } catch (error) {
+    refs.libraryContent.textContent = `Ошибка скачивания: ${error.message}`;
+  }
+});
+
