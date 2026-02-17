@@ -27,9 +27,7 @@ const refs = {
   usersBody: document.getElementById('users-body'),
   refreshBtn: document.getElementById('refresh-btn'),
   logoutBtn: document.getElementById('logout-btn'),
-  notionForm: document.getElementById('notion-form'),
-  notionRecordingId: document.getElementById('notion-recording-id'),
-  notionPageTitle: document.getElementById('notion-page-title'),
+  adminStatus: document.getElementById('admin-status'),
   // Upload
   uploadZone: document.getElementById('upload-zone'),
   uploadInput: document.getElementById('upload-input'),
@@ -256,6 +254,20 @@ function renderConspects(items) {
         showViewerScreen(item.fileName || item.recordingId, item.recordingId);
       });
       actionsCell.appendChild(viewBtn);
+
+      // Notion writeback button (admin only)
+      if (state.user?.role === 'admin' && state.health?.notionMode === 'real') {
+        const notionBtn = document.createElement('button');
+        notionBtn.className = 'btn ghost';
+        notionBtn.style.fontSize = '12px';
+        notionBtn.style.padding = '6px 10px';
+        notionBtn.style.marginLeft = '6px';
+        notionBtn.textContent = 'Notion';
+        notionBtn.addEventListener('click', () => {
+          notionWriteback(item.recordingId, item.fileName);
+        });
+        actionsCell.appendChild(notionBtn);
+      }
     } else if (statusStr === 'processing' || statusStr === 'running' || statusStr === 'queued') {
       const badge = document.createElement('span');
       badge.className = 'badge processing';
@@ -453,37 +465,28 @@ refs.logoutBtn.addEventListener('click', async () => {
   await handleLogout(false);
 });
 
-refs.notionForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  const recordingId = refs.notionRecordingId.value.trim();
-  const pageTitle = refs.notionPageTitle.value.trim();
-  if (!recordingId || !pageTitle) {
-    setStatus(refs.adminStatus, 'Нужно заполнить recordingId и название подстраницы.', true);
-    return;
-  }
+async function notionWriteback(recordingId, fileName) {
+  const pageTitle = prompt(`Название подстраницы Notion для "${fileName || recordingId}":`);
+  if (!pageTitle || !pageTitle.trim()) return;
 
-  setStatus(refs.adminStatus, `Writeback ${recordingId} -> ${pageTitle}...`);
+  setStatus(refs.appStatus, `Notion writeback: ${recordingId} → ${pageTitle}...`);
   try {
     const result = await apiRequest('/api/admin/notion-writeback', {
       method: 'POST',
-      body: { recordingId, pageTitle }
+      body: { recordingId, pageTitle: pageTitle.trim() }
     });
-    const target = result?.targetPageId ? `target=${result.targetPageId}` : 'target=unknown';
-    setStatus(refs.adminStatus, `Writeback выполнен: ${target}`);
+    const target = result?.targetPageId ? `target=${result.targetPageId}` : '';
+    setStatus(refs.appStatus, `Writeback выполнен! ${target}`);
     await loadConspects();
   } catch (error) {
     const suggestions = Array.isArray(error?.details?.suggestions) ? error.details.suggestions : [];
     if (suggestions.length > 0) {
-      setStatus(
-        refs.adminStatus,
-        `Ошибка writeback: ${error.message}. Подсказки: ${suggestions.slice(0, 6).join(', ')}`,
-        true
-      );
+      setStatus(refs.appStatus, `Ошибка writeback: ${error.message}. Подсказки: ${suggestions.slice(0, 6).join(', ')}`, true);
       return;
     }
-    setStatus(refs.adminStatus, `Ошибка writeback: ${error.message}`, true);
+    setStatus(refs.appStatus, `Ошибка writeback: ${error.message}`, true);
   }
-});
+}
 
 async function init() {
   await loadHealth();
