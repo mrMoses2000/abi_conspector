@@ -460,6 +460,110 @@ run_configure_env() {
   echo
 }
 
+cleanup_legacy_env_vars() {
+  if [[ ! -f "$ENV_FILE" ]]; then
+    return
+  fi
+
+  # Whitelist: every env var actually read by config.js, server.js, or run.sh
+  local -a ACTIVE_VARS=(
+    # STT
+    CONSPECTOR_STT_MODE
+    CONSPECTOR_STT_PRIMARY
+    CONSPECTOR_STT_FALLBACK
+    CONSPECTOR_STT_TIMEOUT_SEC
+    CONSPECTOR_STT_LANGUAGE
+    CONSPECTOR_STT_FALLBACK_TO_MOCK
+    CONSPECTOR_WHISPER_MODEL
+    # Groq
+    CONSPECTOR_GROQ_API_KEY
+    GROQ_API_KEY
+    CONSPECTOR_GROQ_MODEL
+    CONSPECTOR_GROQ_MAX_FILE_MB
+    CONSPECTOR_GROQ_CHUNK_MIN
+    # whisper.cpp
+    CONSPECTOR_WHISPERCPP_BIN
+    CONSPECTOR_WHISPERCPP_MODEL_PATH
+    CONSPECTOR_WHISPERCPP_THREADS
+    # LLM provider
+    CONSPECTOR_LLM_PROVIDER
+    # Codex
+    CONSPECTOR_CODEX_MODE
+    CONSPECTOR_CODEX_FULL_AUTO
+    CONSPECTOR_CODEX_MODEL
+    CONSPECTOR_CODEX_EFFORT
+    CONSPECTOR_CODEX_TIMEOUT_SEC
+    CONSPECTOR_CODEX_WORKDIR
+    CONSPECTOR_CODEX_FALLBACK_TO_MOCK
+    CONSPECTOR_SOURCE_NOTE_PATH
+    # Gemini
+    CONSPECTOR_GEMINI_MODE
+    CONSPECTOR_GEMINI_MODEL
+    CONSPECTOR_GEMINI_TIMEOUT_SEC
+    CONSPECTOR_GEMINI_WORKDIR
+    CONSPECTOR_GEMINI_SANDBOX
+    # Notion
+    CONSPECTOR_NOTION_MODE
+    NOTION_TOKEN
+    CONSPECTOR_NOTION_PAGE_ID
+    CONSPECTOR_NOTION_PAGE_TITLE
+    CONSPECTOR_NOTION_ROOT_PAGE_ID
+    CONSPECTOR_NOTION_MERGE_WITH_EXISTING
+    CONSPECTOR_NOTION_SOFT_FAIL
+    # Web
+    CONSPECTOR_WEB_PORT
+    CONSPECTOR_WEB_DB_PATH
+    CONSPECTOR_WEB_SESSION_DAYS
+    CONSPECTOR_DATA_ROOT
+    CONSPECTOR_ADMIN_EMAILS
+    # Quality
+    CONSPECTOR_HTML_SOFT_FAIL
+    CONSPECTOR_PREFLIGHT_STRICT
+    # Legacy STT (kept for bootstrap.sh compatibility)
+    CONSPECTOR_STT_PYTHON
+    CONSPECTOR_STT_SCRIPT
+  )
+
+  local removed=0
+  local tmpfile
+  tmpfile="$(mktemp)"
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Keep comments and blank lines
+    if [[ "$line" =~ ^[[:space:]]*# ]] || [[ -z "$line" ]]; then
+      echo "$line" >> "$tmpfile"
+      continue
+    fi
+
+    # Extract key (KEY=value)
+    local key="${line%%=*}"
+    key="${key#"${key%%[! ]*}"}"   # trim leading spaces
+
+    local found=false
+    for active in "${ACTIVE_VARS[@]}"; do
+      if [[ "$key" == "$active" ]]; then
+        found=true
+        break
+      fi
+    done
+
+    if $found; then
+      echo "$line" >> "$tmpfile"
+    else
+      echo "  Removed: $key"
+      (( removed++ )) || true
+    fi
+  done < "$ENV_FILE"
+
+  if (( removed > 0 )); then
+    mv "$tmpfile" "$ENV_FILE"
+    echo "Cleaned up $removed legacy variable(s) from .env"
+  else
+    rm -f "$tmpfile"
+    echo "No legacy variables found — .env is clean."
+  fi
+}
+
 run_setup_all() {
   echo
   echo "==> Full server setup (all dependencies)"
@@ -467,39 +571,43 @@ run_setup_all() {
 
   # 1. Node.js
   ensure_node_runtime_if_needed "setup-all"
-  echo "[1/8] Node.js ready: $(node -v)"
+  echo "[1/9] Node.js ready: $(node -v)"
 
   # 2. npm install
   ensure_npm_deps
-  echo "[2/8] npm dependencies ready."
+  echo "[2/9] npm dependencies ready."
 
   # 3. Bootstrap (ffmpeg, whisper.cpp, model)
   scripts/bootstrap.sh
-  echo "[3/8] Bootstrap complete (ffmpeg, whisper.cpp, model)."
+  echo "[3/9] Bootstrap complete (ffmpeg, whisper.cpp, model)."
 
   # 4. Configure .env (API keys wizard)
-  echo "[4/8] Configuring API keys and environment..."
+  echo "[4/9] Configuring API keys and environment..."
   run_configure_env
 
-  # 5. Fix paths
-  run_fix_env_paths "silent"
-  echo "[5/8] .env paths auto-fixed."
+  # 5. Clean up legacy vars
+  echo "[5/9] Cleaning up legacy .env variables..."
+  cleanup_legacy_env_vars
 
-  # 6. Gemini skills
+  # 6. Fix paths
+  run_fix_env_paths "silent"
+  echo "[6/9] .env paths auto-fixed."
+
+  # 7. Gemini skills
   if [[ -x "$ROOT_DIR/scripts/setup-gemini-skills.sh" ]]; then
     bash "$ROOT_DIR/scripts/setup-gemini-skills.sh"
-    echo "[6/8] Gemini CLI skills ready."
+    echo "[7/9] Gemini CLI skills ready."
   else
-    echo "[6/8] Gemini skills setup skipped (script not found)."
+    echo "[7/9] Gemini skills setup skipped (script not found)."
   fi
 
-  # 7. Env doctor
-  echo "[7/8] Running env doctor..."
+  # 8. Env doctor
+  echo "[8/9] Running env doctor..."
   node scripts/env-doctor.js || true
 
-  # 8. Done
+  # 9. Done
   echo
-  echo "[8/8] Setup complete!"
+  echo "[9/9] Setup complete!"
   echo "  Run:  ./run.sh --web"
   echo
 }
