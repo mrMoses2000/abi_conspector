@@ -783,14 +783,26 @@ ensure_docker_ready() {
 
   if ! docker info >/dev/null 2>&1; then
     echo "Docker daemon is not running. Starting..."
-    sudo systemctl start docker
+    sudo systemctl daemon-reload
     sudo systemctl enable docker
-    sleep 2
+    local max_attempts=3
+    local attempt=1
+    while (( attempt <= max_attempts )); do
+      echo "  Attempting to start Docker (try $attempt/$max_attempts)..."
+      sudo systemctl start docker
+      sleep 5
+      if docker info >/dev/null 2>&1; then
+        echo "Docker daemon started."
+        break
+      fi
+      (( attempt++ ))
+    done
     if ! docker info >/dev/null 2>&1; then
-      echo "Failed to start Docker daemon."
+      echo "ERROR: Failed to start Docker daemon after $max_attempts attempts."
+      echo "Check logs: sudo journalctl -xeu docker.service"
+      sudo journalctl -xeu docker.service --no-pager | tail -15
       exit 1
     fi
-    echo "Docker daemon started."
   fi
 
   if ! groups "$USER" | grep -q '\bdocker\b'; then
