@@ -314,11 +314,29 @@ export function createMergePipeline(deps) {
         try {
           const llmProvider = runtimeConfig.llm?.provider || 'codex';
           const llmConfigKey = getLlmConfigKey(llmProvider);
+
+          // Use subject name as Notion page title if recording belongs to a subject
+          const notionConfig = { ...runtimeConfig.notion };
+          if (recording.subject_id) {
+            const subject = db.getSubject?.(recording.subject_id);
+            if (subject?.name) {
+              notionConfig.pageTitle = subject.name;
+            }
+          }
+          // Fallback: use recording file name if no subject and no explicit title
+          if (!notionConfig.pageTitle) {
+            const baseName = String(recording.original_file_name || '')
+              .replace(/\.[^./\\]+$/, '').trim();
+            if (baseName) {
+              notionConfig.pageTitle = baseName;
+            }
+          }
+
           const result = await writeMergedToNotion({
             mergedPath,
             recording,
             backupsDir: managedPaths.backups,
-            notionConfig: runtimeConfig.notion,
+            notionConfig,
             llmMergeFromMarkdown: getMergeFromMarkdownWorker(llmProvider),
             llmConfig: runtimeConfig[llmConfigKey]
           });
