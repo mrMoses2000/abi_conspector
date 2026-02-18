@@ -62,6 +62,17 @@
         </div>
       </div>
 
+      <!-- Subject selector -->
+      <div id="subject-selector" class="subject-selector">
+        <label class="subject-select-label">
+          Предмет
+          <select id="subject-select" class="subject-select">
+            <option value="" disabled selected>— выберите предмет —</option>
+          </select>
+        </label>
+        <button id="create-subject-btn" class="btn secondary" type="button">+ Новый предмет</button>
+      </div>
+
       <!-- Upload dropzone -->
       <div id="upload-zone" class="upload-zone">
         <div class="upload-zone-content">
@@ -119,7 +130,7 @@
       <div id="viewer-content" class="viewer-content"></div>
     </section>
 
-    <!-- Conspect library (dropdown + viewer) -->
+    <!-- Conspect library (by subject) -->
     <section id="library-card" class="card hidden library-card">
       <div class="header">
         <div>
@@ -131,16 +142,17 @@
       </div>
       <div class="library-controls">
         <label class="library-select-label">
-          Выберите конспект
+          Предмет
           <select id="library-select" class="library-select">
-            <option value="" disabled selected>— выберите конспект —</option>
+            <option value="" disabled selected>— выберите предмет —</option>
           </select>
         </label>
         <button id="library-download-md" class="btn ghost" type="button" disabled>⬇ Markdown</button>
+        <button id="library-notion-btn" class="btn ghost" type="button" disabled>↑ Notion</button>
       </div>
       <div id="library-content" class="viewer-content">
         <div class="library-placeholder">
-          <p class="muted">Выберите конспект из списка выше</p>
+          <p class="muted">Выберите предмет из списка выше</p>
         </div>
       </div>
     </section>
@@ -150,6 +162,16 @@
       <p class="muted">Управление пользователями. Notion writeback — через кнопку «Notion» у конспекта.</p>
 
       <div id="admin-status" class="status">Admin режим</div>
+
+      <div class="admin-git-section">
+        <h3>📁 Git — конспекты</h3>
+        <p class="muted">Синхронизация папок conspects/{Предмет}/ с репозиторием</p>
+        <div class="actions">
+          <button id="sync-to-repo-btn" class="btn accent" type="button">⬆ Sync to Git</button>
+          <button id="apply-from-repo-btn" class="btn secondary" type="button">⬇ Apply from Repo</button>
+        </div>
+        <div id="git-status" class="status"></div>
+      </div>
 
       <table id="users-table">
         <thead>

@@ -14,8 +14,8 @@ Use this skill when the prompt asks to transform transcript JSON into a readable
 
 - Markdown only — no explanations outside the document.
 - Do not wrap output in a code fence.
+- Write as if a diligent student is taking continuous, natural notes — no metadata headers, no recording IDs, no source file names.
 - Recommended sections:
-  - `Краткое summary`
   - `Ключевые тезисы`
   - `Термины`
   - `Примеры`

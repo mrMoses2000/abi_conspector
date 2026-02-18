@@ -1,3 +1,4 @@
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { normalizeToFlac } from '../audio/ffmpeg.js';
 import { ControlledError } from '../utils/errors.js';
@@ -229,6 +230,85 @@ export function createMergePipeline(deps) {
           }
         }
       });
+
+      // ─── Subject-level merge (if recording belongs to a subject) ───
+      if (recording.subject_id) {
+        const subjectDir = path.join(managedPaths.subjects, recording.subject_id);
+        await fs.mkdir(subjectDir, { recursive: true });
+        const subjectMergedPath = path.join(subjectDir, 'merged.md');
+        const subjectHtmlPath = path.join(subjectDir, 'conspect.html');
+
+        await stage('merge_subject', async () => {
+          const llmConfigKey = getLlmConfigKey(runtimeConfig.llm?.provider || 'codex');
+          const llmConfig = runtimeConfig[llmConfigKey];
+          const runMergeFromMd = getMergeFromMarkdownWorker(runtimeConfig.llm?.provider || 'codex');
+
+          // Read the new structured MD
+          const structuredMd = await fs.readFile(structuredPath, 'utf8');
+
+          // Read existing subject conspect (if any)
+          let existingSubjectMd = '';
+          try {
+            existingSubjectMd = await fs.readFile(subjectMergedPath, 'utf8');
+          } catch { /* first recording for this subject */ }
+
+          try {
+            await runMergeFromMd({
+              structuredMarkdown: structuredMd,
+              baseMarkdown: existingSubjectMd,
+              outputPath: subjectMergedPath,
+              recording,
+              llmConfig
+            });
+          } catch (error) {
+            const canFallback =
+              runtimeConfig.resilience.codexFallbackToMock && llmConfig.mode === 'real';
+            if (!canFallback) {
+              throw error;
+            }
+            appendWarning(
+              `merge_subject failed, fallback to mock: ${error instanceof Error ? error.message : 'unknown error'}`
+            );
+            await runMergeFromMd({
+              structuredMarkdown: structuredMd,
+              baseMarkdown: existingSubjectMd,
+              outputPath: subjectMergedPath,
+              recording,
+              llmConfig: { ...llmConfig, mode: 'mock' }
+            });
+          }
+        });
+
+        await stage('render_subject_html', async () => {
+          const subjectName = db.getSubject?.(recording.subject_id)?.name || 'Конспект';
+          try {
+            await renderHtmlFromMarkdown({
+              mergedPath: subjectMergedPath,
+              htmlPath: subjectHtmlPath,
+              title: subjectName
+            });
+          } catch (error) {
+            if (!runtimeConfig.resilience.continueWithoutHtml) {
+              throw error;
+            }
+            appendWarning(
+              `render_subject_html failed: ${error instanceof Error ? error.message : 'unknown error'}`
+            );
+            try {
+              await renderEmergencyHtml({
+                mergedPath: subjectMergedPath,
+                htmlPath: subjectHtmlPath,
+                title: subjectName,
+                reason: error instanceof Error ? error.message : 'unknown error'
+              });
+            } catch (emergencyError) {
+              appendWarning(
+                `emergency subject html failed: ${emergencyError instanceof Error ? emergencyError.message : 'unknown error'}`
+              );
+            }
+          }
+        });
+      }
 
       await stage('notion_writeback', async () => {
         try {

@@ -121,7 +121,7 @@ async function runGemini(config, outputPath, prompt) {
  */
 export async function runGeminiMergeFromMarkdown(payload) {
     const { structuredMarkdown, baseMarkdown, outputPath, recording, geminiConfig } = payload;
-    const prompt = `Ты редактор учебного материала.\n\nЗадача: сделать полную merged-версию конспекта в markdown на русском языке.\n\nТребования:\n- Верни только markdown.\n- Если базовый конспект пустой, используй структурированный материал как основу.\n- Если базовый конспект есть, аккуратно объединяй и улучшай структуру.\n- Сохрани совместимость с импортом в Notion (обычные заголовки/списки/таблицы/цитаты).\n- Добавь раздел \"Схема\" с mermaid-блоком.\n\nКонтекст:\n- recording_id: ${recording.id}\n- source_file: ${recording.original_file_name ?? recording.id}\n\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\``;
+    const prompt = `Ты редактор учебного материала.\n\nЗадача: сделать полную merged-версию конспекта в markdown на русском языке.\n\nТребования:\n- Верни только markdown.\n- Создай единый, цельный, интегрированный конспект — НЕ разбивай на отдельные "Лекция 1 / Лекция 2".\n- Если базовый конспект пустой, используй структурированный материал как основу.\n- Если базовый конспект есть, интегрируй новый материал в существующую структуру: дополняй разделы, добавляй детали, объединяй пересекающиеся темы.\n- Не добавляй метаданные (recording_id, имена файлов, даты).\n- Сохрани совместимость с импортом в Notion (обычные заголовки/списки/таблицы/цитаты).\n- Добавь раздел \"Схема\" с mermaid-блоком.\n\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\``;
 
     await runGemini(geminiConfig, outputPath, prompt);
 }
@@ -145,7 +145,7 @@ export async function runGeminiStructure(payload) {
     const { transcriptPath, structuredPath, recording, geminiConfig } = payload;
     const transcriptJson = await readText(transcriptPath);
 
-    const prompt = `Ты редактор академического конспекта.\n\nЗадача: преобразуй diarized transcript в качественный русский markdown-конспект.\n\nПравила:\n- Пиши строго markdown и без пояснений вне результата.\n- Сохраняй факты из транскрипта, не выдумывай новые.\n- Используй структуру: \"Краткое summary\", \"Ключевые тезисы\", \"Термины\", \"Примеры\", \"Вопросы к экзамену\", \"TODO\".\n- Если в транскрипте есть неоднозначности, добавь блок \"Открытые вопросы\".\n\nКонтекст:\n- recording_id: ${recording.id}\n- source_file: ${recording.original_file_name ?? recording.id}\n\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\``;
+    const prompt = `Ты редактор академического конспекта.\n\nЗадача: преобразуй diarized transcript в качественный русский markdown-конспект.\n\nПравила:\n- Пиши строго markdown и без пояснений вне результата.\n- Пиши как прилежный студент, ведущий непрерывные естественные записи — без технических заголовков и метаданных.\n- Сохраняй факты из транскрипта, не выдумывай новые.\n- Используй структуру: \"Ключевые тезисы\", \"Термины\", \"Примеры\", \"Вопросы к экзамену\", \"TODO\".\n- Если в транскрипте есть неоднозначности, добавь блок \"Открытые вопросы\".\n\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\``;
 
     await runGemini(geminiConfig, structuredPath, prompt);
 }

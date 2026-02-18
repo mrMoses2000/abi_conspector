@@ -2,6 +2,7 @@ const state = {
   token: localStorage.getItem('conspector_web_token') || '',
   user: null,
   conspects: [],
+  subjects: [],
   health: null,
   uploading: false,
   pollingTimers: []
@@ -36,6 +37,9 @@ const refs = {
   uploadPercent: document.getElementById('upload-percent'),
   uploadProgressBar: document.getElementById('upload-progress-bar'),
   uploadStatusText: document.getElementById('upload-status-text'),
+  // Subject selector
+  subjectSelect: document.getElementById('subject-select'),
+  createSubjectBtn: document.getElementById('create-subject-btn'),
   // Viewer
   viewerCard: document.getElementById('viewer-card'),
   viewerTitle: document.getElementById('viewer-title'),
@@ -48,6 +52,7 @@ const refs = {
   libraryBack: document.getElementById('library-back'),
   librarySelect: document.getElementById('library-select'),
   libraryDownloadMd: document.getElementById('library-download-md'),
+  libraryNotionBtn: document.getElementById('library-notion-btn'),
   libraryContent: document.getElementById('library-content')
 };
 
@@ -383,6 +388,31 @@ async function loadConspects() {
   setStatus(refs.appStatus, `Загружено задач: ${items.length}`);
 }
 
+async function loadSubjects() {
+  try {
+    const payload = await apiRequest('/api/subjects');
+    state.subjects = Array.isArray(payload?.subjects) ? payload.subjects : [];
+    populateSubjectDropdown();
+  } catch {
+    state.subjects = [];
+  }
+}
+
+function populateSubjectDropdown() {
+  const select = refs.subjectSelect;
+  const current = select.value;
+  select.innerHTML = '<option value="" disabled selected>\u2014 \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043f\u0440\u0435\u0434\u043c\u0435\u0442 \u2014</option>';
+  for (const subj of state.subjects) {
+    const opt = document.createElement('option');
+    opt.value = subj.id;
+    opt.textContent = `${subj.name}  (${subj.recording_count} аудио)`;
+    select.appendChild(opt);
+  }
+  if (current && state.subjects.some(s => s.id === current)) {
+    select.value = current;
+  }
+}
+
 async function loadUsersIfAdmin() {
   if (state.user?.role !== 'admin') {
     renderUsers([]);
@@ -395,15 +425,15 @@ async function loadUsersIfAdmin() {
 async function enterApp() {
   showAppScreen();
   updateUserLine();
-  setStatus(refs.appStatus, 'Загрузка списка конспектов...');
+  setStatus(refs.appStatus, '\u0417\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u0441\u043f\u0438\u0441\u043a\u0430 \u043a\u043e\u043d\u0441\u043f\u0435\u043a\u0442\u043e\u0432...');
   try {
-    await Promise.all([loadConspects(), loadUsersIfAdmin()]);
+    await Promise.all([loadConspects(), loadUsersIfAdmin(), loadSubjects()]);
   } catch (error) {
     if (ensureAuthError(error)) {
       handleLogout(true);
       return;
     }
-    setStatus(refs.appStatus, `Ошибка загрузки: ${error.message}`, true);
+    setStatus(refs.appStatus, `\u041e\u0448\u0438\u0431\u043a\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0438: ${error.message}`, true);
   }
 }
 
@@ -617,6 +647,11 @@ async function uploadFile(file) {
 
       const formData = new FormData();
       formData.append('audio', file);
+      // Attach selected subject
+      const subjectId = refs.subjectSelect?.value || '';
+      if (subjectId) {
+        formData.append('subjectId', subjectId);
+      }
       xhr.send(formData);
     });
 
@@ -752,54 +787,82 @@ refs.viewerDownloadMd.addEventListener('click', async () => {
   }
 });
 
-// ─── Library tab ───
+// ─── Subject management ───
 
-function populateLibraryDropdown() {
+refs.createSubjectBtn.addEventListener('click', async () => {
+  const name = prompt('Название нового предмета:');
+  if (!name?.trim()) return;
+  try {
+    const payload = await apiRequest('/api/subjects', {
+      method: 'POST',
+      body: JSON.stringify({ name: name.trim() }),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    await loadSubjects();
+    // Auto-select the newly created subject
+    if (payload?.subject?.id) {
+      refs.subjectSelect.value = payload.subject.id;
+    }
+    setStatus(refs.appStatus, `Предмет "${name.trim()}" создан`);
+  } catch (error) {
+    setStatus(refs.appStatus, `Ошибка: ${error.message}`, true);
+  }
+});
+
+// Block upload if no subject selected
+refs.uploadZone.addEventListener('click', (e) => {
+  if (!refs.subjectSelect?.value) {
+    e.stopPropagation();
+    setStatus(refs.appStatus, 'Сначала выберите предмет', true);
+  }
+});
+
+// ─── Library tab (by subjects) ───
+
+async function populateLibraryDropdown() {
   const select = refs.librarySelect;
   const current = select.value;
+  select.innerHTML = '<option value="" disabled selected>\u2014 \u0432\u044b\u0431\u0435\u0440\u0438\u0442\u0435 \u043f\u0440\u0435\u0434\u043c\u0435\u0442 \u2014</option>';
 
-  // clear old options
-  select.innerHTML = '<option value="" disabled selected>— выберите конспект —</option>';
+  try {
+    const payload = await apiRequest('/api/subjects');
+    const subjects = Array.isArray(payload?.subjects) ? payload.subjects : [];
 
-  const doneItems = (state.conspects || []).filter(
-    (item) => item.status === 'done'
-  );
+    if (subjects.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.disabled = true;
+      opt.textContent = 'Нет предметов';
+      select.appendChild(opt);
+      refs.libraryDownloadMd.disabled = true;
+      refs.libraryNotionBtn.disabled = true;
+      return;
+    }
 
-  if (doneItems.length === 0) {
-    const opt = document.createElement('option');
-    opt.value = '';
-    opt.disabled = true;
-    opt.textContent = 'Нет готовых конспектов';
-    select.appendChild(opt);
-    refs.libraryDownloadMd.disabled = true;
-    return;
-  }
+    for (const subj of subjects) {
+      const opt = document.createElement('option');
+      opt.value = subj.id;
+      opt.textContent = `${subj.name}  (${subj.recording_count} аудио)`;
+      select.appendChild(opt);
+    }
 
-  for (const item of doneItems) {
-    const opt = document.createElement('option');
-    opt.value = item.recordingId;
-    const name = item.fileName || item.recordingId;
-    const date = item.createdAt ? new Date(item.createdAt).toLocaleDateString('ru-RU') : '';
-    const label = date ? `${name}  ·  ${date}` : name;
-    opt.textContent = item.htmlAvailable ? label : `${label}  (MD)`;
-    opt.dataset.hasHtml = item.htmlAvailable ? '1' : '0';
-    select.appendChild(opt);
-  }
-
-  // restore selection if still exists
-  if (current && doneItems.some((i) => i.recordingId === current)) {
-    select.value = current;
+    if (current && subjects.some(s => s.id === current)) {
+      select.value = current;
+    }
+  } catch (error) {
+    refs.libraryContent.textContent = `Ошибка загрузки предметов: ${error.message}`;
   }
 }
 
-async function loadLibraryConspect(recordingId) {
+async function loadSubjectConspect(subjectId) {
   refs.libraryContent.textContent = 'Загрузка...';
   refs.libraryDownloadMd.disabled = false;
-  state.libraryRecordingId = recordingId;
+  refs.libraryNotionBtn.disabled = false;
+  state.librarySubjectId = subjectId;
 
-  // Always try HTML first, fallback to MD if HTML fails
+  // Try HTML first, fallback to MD
   try {
-    const html = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/html`, {
+    const html = await apiRequest(`/api/subjects/${encodeURIComponent(subjectId)}/html`, {
       responseType: 'text'
     });
     refs.libraryContent.textContent = '';
@@ -814,7 +877,7 @@ async function loadLibraryConspect(recordingId) {
   }
 
   try {
-    const mdText = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/md`, {
+    const mdText = await apiRequest(`/api/subjects/${encodeURIComponent(subjectId)}/md`, {
       responseType: 'text'
     });
     refs.libraryContent.textContent = '';
@@ -822,8 +885,10 @@ async function loadLibraryConspect(recordingId) {
     pre.className = 'library-md-fallback';
     pre.textContent = mdText;
     refs.libraryContent.appendChild(pre);
-  } catch (mdError) {
-    refs.libraryContent.textContent = `Конспект не найден. HTML и Markdown недоступны. Возможно файлы не были сгенерированы.`;
+  } catch (_mdError) {
+    refs.libraryContent.textContent = 'Конспект еще не сгенерирован для этого предмета. Загрузите аудио лекции и дождитесь обработки.';
+    refs.libraryDownloadMd.disabled = true;
+    refs.libraryNotionBtn.disabled = true;
   }
 }
 
@@ -833,28 +898,28 @@ refs.libraryBtn.addEventListener('click', () => {
 
 refs.libraryBack.addEventListener('click', () => {
   refs.libraryCard.classList.add('hidden');
-  state.libraryRecordingId = null;
+  state.librarySubjectId = null;
   showAppScreen();
 });
 
 refs.librarySelect.addEventListener('change', () => {
-  const recordingId = refs.librarySelect.value;
-  if (recordingId) {
-    loadLibraryConspect(recordingId);
+  const subjectId = refs.librarySelect.value;
+  if (subjectId) {
+    loadSubjectConspect(subjectId);
   }
 });
 
 refs.libraryDownloadMd.addEventListener('click', async () => {
-  const recordingId = state.libraryRecordingId;
-  if (!recordingId) return;
+  const subjectId = state.librarySubjectId;
+  if (!subjectId) return;
   try {
-    const blob = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/md`, {
+    const blob = await apiRequest(`/api/subjects/${encodeURIComponent(subjectId)}/md`, {
       responseType: 'blob'
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${recordingId}.md`;
+    a.download = `subject_${subjectId}.md`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
   } catch (error) {
@@ -862,3 +927,77 @@ refs.libraryDownloadMd.addEventListener('click', async () => {
   }
 });
 
+refs.libraryNotionBtn.addEventListener('click', async () => {
+  const subjectId = state.librarySubjectId;
+  if (!subjectId) return;
+  if (!confirm('Отправить конспект в Notion?')) return;
+  try {
+    refs.libraryNotionBtn.disabled = true;
+    refs.libraryNotionBtn.textContent = '↑ Отправка...';
+    await apiRequest(`/api/subjects/${encodeURIComponent(subjectId)}/notion`, {
+      method: 'POST'
+    });
+    refs.libraryNotionBtn.textContent = '\u2714 Отправлено!';
+    setTimeout(() => {
+      refs.libraryNotionBtn.textContent = '\u2191 Notion';
+      refs.libraryNotionBtn.disabled = false;
+    }, 3000);
+  } catch (error) {
+    refs.libraryNotionBtn.textContent = '\u2191 Notion';
+    refs.libraryNotionBtn.disabled = false;
+    refs.libraryContent.textContent = `Ошибка Notion: ${error.message}`;
+  }
+});
+
+
+// ─── Git integration (admin) ───
+
+const syncToRepoBtn = document.getElementById('sync-to-repo-btn');
+const applyFromRepoBtn = document.getElementById('apply-from-repo-btn');
+const gitStatus = document.getElementById('git-status');
+
+if (syncToRepoBtn) {
+  syncToRepoBtn.addEventListener('click', async () => {
+    if (!confirm('Скопировать конспекты в conspects/ и закоммитить?')) return;
+    const msg = prompt('Commit message (Enter для авто):', '');
+    try {
+      syncToRepoBtn.disabled = true;
+      syncToRepoBtn.textContent = '⬆ Синхронизация...';
+      setStatus(gitStatus, 'Синхронизация...');
+      const body = msg?.trim() ? { message: msg.trim() } : {};
+      const result = await apiRequest('/api/admin/sync-conspects-to-repo', {
+        method: 'POST',
+        body: JSON.stringify(body),
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const names = (result.synced || []).map(s => s.name).join(', ');
+      setStatus(gitStatus, `✔ Синхронизировано: ${names}`);
+    } catch (error) {
+      setStatus(gitStatus, `Ошибка: ${error.message}`, true);
+    } finally {
+      syncToRepoBtn.disabled = false;
+      syncToRepoBtn.textContent = '⬆ Sync to Git';
+    }
+  });
+}
+
+if (applyFromRepoBtn) {
+  applyFromRepoBtn.addEventListener('click', async () => {
+    if (!confirm('Применить конспекты из conspects/ обратно в систему?')) return;
+    try {
+      applyFromRepoBtn.disabled = true;
+      applyFromRepoBtn.textContent = '⬇ Применение...';
+      setStatus(gitStatus, 'Применение из репозитория...');
+      const result = await apiRequest('/api/admin/apply-from-repo', {
+        method: 'POST'
+      });
+      const names = (result.applied || []).map(s => s.name).join(', ');
+      setStatus(gitStatus, names ? `✔ Применено: ${names}` : 'Нет файлов для применения');
+    } catch (error) {
+      setStatus(gitStatus, `Ошибка: ${error.message}`, true);
+    } finally {
+      applyFromRepoBtn.disabled = false;
+      applyFromRepoBtn.textContent = '⬇ Apply from Repo';
+    }
+  });
+}

@@ -63,6 +63,9 @@ Use tables for structured comparisons, term glossaries, and event summaries.
 
 ## General rules
 
+- Produce a single, integrated, continuous conspect — NOT separate "Лекция 1 / Лекция 2" sections with dividers.
+- When base note has content, integrate new material into the existing structure: expand sections, add details, merge overlapping topics.
+- Do NOT add metadata (recording_id, source file names, dates) to the output.
 - Preserve facts from both inputs.
 - Prefer explicit facts from base note when conflict is unresolved.
 - If conflict cannot be resolved, keep both variants and mark uncertainty.

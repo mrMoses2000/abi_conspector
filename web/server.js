@@ -5,6 +5,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import multer from 'multer';
 import { writeMergedToNotion } from '../src/main/workers/notionWorker.js';
@@ -213,6 +214,7 @@ const managedPaths = {
   structured: path.join(dataRoot, 'structured'),
   merged: path.join(dataRoot, 'merged'),
   html: path.join(dataRoot, 'html'),
+  subjects: path.join(dataRoot, 'subjects'),
   backups: path.join(dataRoot, 'backups')
 };
 
@@ -277,7 +279,8 @@ const runtimeConfig = {
 await ensureDirs([
   managedPaths.root, managedPaths.audio, managedPaths.imports,
   managedPaths.transcripts, managedPaths.structured,
-  managedPaths.merged, managedPaths.html, managedPaths.backups
+  managedPaths.merged, managedPaths.html, managedPaths.subjects,
+  managedPaths.backups
 ]);
 
 const appDb = new AppDatabase(conspectorDbPath);
@@ -490,6 +493,124 @@ function listConspects() {
   return listConspectsFromHtmlDir();
 }
 
+// ─── Subject CRUD endpoints ───
+
+app.get('/api/subjects', requireAuth, (_req, res) => {
+  const subjects = appDb.listSubjects();
+  res.json({ ok: true, subjects });
+});
+
+app.post('/api/subjects', requireAuth, requireAdmin, (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  if (!name) {
+    res.status(400).json({ ok: false, error: { code: 'NAME_REQUIRED', message: 'Subject name is required' } });
+    return;
+  }
+  // Check for duplicate
+  const existing = appDb.getSubjectByName(name);
+  if (existing) {
+    res.status(409).json({ ok: false, error: { code: 'DUPLICATE_SUBJECT', message: `Subject "${name}" already exists` } });
+    return;
+  }
+  const subject = appDb.createSubject(name);
+  res.json({ ok: true, subject });
+});
+
+app.get('/api/subjects/:subjectId', requireAuth, (req, res) => {
+  const subjectId = req.params.subjectId;
+  const subject = appDb.getSubject(subjectId);
+  if (!subject) {
+    res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Subject not found' } });
+    return;
+  }
+  const recordings = appDb.listRecordingsBySubject(subjectId);
+  res.json({ ok: true, subject, recordings });
+});
+
+app.get('/api/subjects/:subjectId/html', requireAuth, (req, res) => {
+  try {
+    const subject = appDb.getSubject(req.params.subjectId);
+    if (!subject) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Subject not found' } });
+    }
+    const subjectDir = path.resolve(managedPaths.subjects, subject.id);
+    const htmlPath = path.join(subjectDir, 'conspect.html');
+    if (!fs.existsSync(htmlPath)) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'HTML conspect not yet generated for this subject' } });
+    }
+    const content = fs.readFileSync(htmlPath, 'utf8');
+    res.type('text/html').send(content);
+  } catch (error) {
+    if (!res.headersSent) {
+      const ipcError = asIpcError(error);
+      res.status(error instanceof ControlledError ? 400 : 500).json({ ok: false, error: ipcError });
+    }
+  }
+});
+
+app.get('/api/subjects/:subjectId/md', requireAuth, (req, res) => {
+  try {
+    const subject = appDb.getSubject(req.params.subjectId);
+    if (!subject) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Subject not found' } });
+    }
+    const subjectDir = path.resolve(managedPaths.subjects, subject.id);
+    const mdPath = path.join(subjectDir, 'merged.md');
+    if (!fs.existsSync(mdPath)) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Merged MD not yet generated for this subject' } });
+    }
+    const content = fs.readFileSync(mdPath, 'utf8');
+    res.type('text/markdown').send(content);
+  } catch (error) {
+    if (!res.headersSent) {
+      const ipcError = asIpcError(error);
+      res.status(error instanceof ControlledError ? 400 : 500).json({ ok: false, error: ipcError });
+    }
+  }
+});
+
+app.post('/api/subjects/:subjectId/notion', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const subject = appDb.getSubject(req.params.subjectId);
+    if (!subject) {
+      return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Subject not found' } });
+    }
+    const subjectDir = path.resolve(managedPaths.subjects, subject.id);
+    const mergedPath = path.join(subjectDir, 'merged.md');
+    if (!fs.existsSync(mergedPath)) {
+      return res.status(404).json({ ok: false, error: { code: 'MERGED_NOT_FOUND', message: 'No merged conspect for this subject yet' } });
+    }
+
+    const notionConfig = {
+      mode: process.env.CONSPECTOR_NOTION_MODE === 'real' ? 'real' : 'off',
+      token: process.env.NOTION_TOKEN || '',
+      pageId: process.env.CONSPECTOR_NOTION_PAGE_ID || '',
+      pageTitle: subject.name,
+      rootPageId: process.env.CONSPECTOR_NOTION_ROOT_PAGE_ID || '',
+      mergeWithExisting: parseBoolean(process.env.CONSPECTOR_NOTION_MERGE_WITH_EXISTING, true)
+    };
+
+    const llmProvider = runtimeConfig.llm?.provider || 'codex';
+    const llmConfigKey = getLlmConfigKey(llmProvider);
+    const llmConfig = runtimeConfig[llmConfigKey];
+    const llmMergeFromMarkdown = getMergeFromMarkdownWorker(llmProvider);
+
+    const backupsDir = path.join(dataRoot, 'backups');
+    const result = await writeMergedToNotion({
+      mergedPath,
+      recording: { id: subject.id, original_file_name: subject.name },
+      backupsDir,
+      notionConfig,
+      llmMergeFromMarkdown,
+      llmConfig
+    });
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    const ipcError = asIpcError(error);
+    res.status(400).json({ ok: false, error: ipcError });
+  }
+});
+
 // ─── Upload endpoint ───
 app.post('/api/upload', requireAuth, upload.single('audio'), async (req, res) => {
   if (!req.file) {
@@ -517,6 +638,12 @@ app.post('/api/upload', requireAuth, upload.single('audio'), async (req, res) =>
       queue: mergeQueue,
       cleanupOnError: true
     });
+
+    // Link recording to subject if provided
+    const subjectId = String(req.body?.subjectId || '').trim();
+    if (subjectId && result.recordingId) {
+      appDb.updateRecordingSubject(result.recordingId, subjectId);
+    }
 
     res.json({
       ok: true,
@@ -849,6 +976,117 @@ app.post('/api/admin/notion-writeback', requireAuth, requireAdmin, async (req, r
     res.status(400).json({ ok: false, error: ipcError });
   } finally {
     conspectorDb.close();
+  }
+});
+
+// ─── Git integration: sync conspects to repo ───
+
+function sanitizeFolderName(name) {
+  return name.replace(/[/\\:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim();
+}
+
+app.post('/api/admin/sync-conspects-to-repo', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const subjects = appDb.listSubjects();
+    if (subjects.length === 0) {
+      return res.status(400).json({ ok: false, error: { code: 'NO_SUBJECTS', message: 'No subjects found' } });
+    }
+
+    const conspectsRoot = path.join(projectRoot, 'conspects');
+    await fsp.mkdir(conspectsRoot, { recursive: true });
+
+    const synced = [];
+    for (const subj of subjects) {
+      const subjectDir = path.join(managedPaths.subjects, subj.id);
+      const folderName = sanitizeFolderName(subj.name);
+      const targetDir = path.join(conspectsRoot, folderName);
+      await fsp.mkdir(targetDir, { recursive: true });
+
+      const files = ['merged.md', 'conspect.html'];
+      let copied = 0;
+      for (const file of files) {
+        const src = path.join(subjectDir, file);
+        if (fs.existsSync(src)) {
+          await fsp.copyFile(src, path.join(targetDir, file));
+          copied++;
+        }
+      }
+      if (copied > 0) {
+        synced.push({ name: subj.name, folder: folderName, files: copied });
+      }
+    }
+
+    if (synced.length === 0) {
+      return res.json({ ok: true, message: 'No conspect files found to sync', synced: [] });
+    }
+
+    // Git add + commit
+    const commitMsg = req.body?.message || `conspects: sync ${synced.length} subject(s)`;
+    try {
+      execSync('git add conspects/', { cwd: projectRoot, stdio: 'pipe' });
+      execSync(`git commit -m ${JSON.stringify(commitMsg)}`, { cwd: projectRoot, stdio: 'pipe' });
+    } catch (gitErr) {
+      // git commit returns non-zero if nothing to commit
+      const stderr = gitErr.stderr?.toString() || '';
+      if (!stderr.includes('nothing to commit') && !gitErr.stdout?.toString().includes('nothing to commit')) {
+        throw gitErr;
+      }
+    }
+
+    res.json({ ok: true, synced, commitMessage: commitMsg });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Sync failed';
+    res.status(500).json({ ok: false, error: { code: 'SYNC_FAILED', message } });
+  }
+});
+
+app.post('/api/admin/apply-from-repo', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const conspectsRoot = path.join(projectRoot, 'conspects');
+    if (!fs.existsSync(conspectsRoot)) {
+      return res.status(404).json({ ok: false, error: { code: 'NO_CONSPECTS_DIR', message: 'conspects/ directory not found' } });
+    }
+
+    const subjects = appDb.listSubjects();
+    const nameToSubject = new Map();
+    for (const s of subjects) {
+      nameToSubject.set(sanitizeFolderName(s.name), s);
+    }
+
+    const entries = await fsp.readdir(conspectsRoot, { withFileTypes: true });
+    const applied = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const subj = nameToSubject.get(entry.name);
+      if (!subj) continue;
+
+      const repoDir = path.join(conspectsRoot, entry.name);
+      const subjectDir = path.join(managedPaths.subjects, subj.id);
+      await fsp.mkdir(subjectDir, { recursive: true });
+
+      const repoMd = path.join(repoDir, 'merged.md');
+      if (fs.existsSync(repoMd)) {
+        await fsp.copyFile(repoMd, path.join(subjectDir, 'merged.md'));
+
+        // Re-render HTML
+        try {
+          const { renderHtmlFromMarkdown } = await import('../src/main/workers/htmlWorker.js');
+          await renderHtmlFromMarkdown({
+            mergedPath: path.join(subjectDir, 'merged.md'),
+            htmlPath: path.join(subjectDir, 'conspect.html'),
+            title: subj.name
+          });
+        } catch { /* HTML render optional */ }
+
+        applied.push({ name: subj.name, folder: entry.name });
+      }
+    }
+
+    res.json({ ok: true, applied });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Apply failed';
+    res.status(500).json({ ok: false, error: { code: 'APPLY_FAILED', message } });
   }
 });
 

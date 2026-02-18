@@ -146,6 +146,62 @@ export class AppDatabase {
       DELETE FROM recordings
       WHERE id = ?
     `);
+
+    // ─── Subject statements ───
+    this.insertSubjectStmt = this.db.prepare(`
+      INSERT INTO subjects (id, name, created_at, updated_at)
+      VALUES (?, ?, ?, ?)
+    `);
+
+    this.listSubjectsStmt = this.db.prepare(`
+      SELECT
+        s.id,
+        s.name,
+        s.created_at,
+        s.updated_at,
+        COUNT(r.id) AS recording_count
+      FROM subjects s
+      LEFT JOIN recordings r ON r.subject_id = s.id
+      GROUP BY s.id
+      ORDER BY s.name ASC
+    `);
+
+    this.getSubjectStmt = this.db.prepare(`
+      SELECT id, name, created_at, updated_at
+      FROM subjects
+      WHERE id = ?
+    `);
+
+    this.getSubjectByNameStmt = this.db.prepare(`
+      SELECT id, name, created_at, updated_at
+      FROM subjects
+      WHERE name = ?
+    `);
+
+    this.deleteSubjectStmt = this.db.prepare(`
+      DELETE FROM subjects
+      WHERE id = ?
+    `);
+
+    this.updateRecordingSubjectStmt = this.db.prepare(`
+      UPDATE recordings
+      SET subject_id = ?, updated_at = ?
+      WHERE id = ?
+    `);
+
+    this.listRecordingsBySubjectStmt = this.db.prepare(`
+      SELECT
+        r.id,
+        r.original_file_name,
+        r.duration_sec,
+        r.created_at,
+        j.status AS job_status,
+        j.stage AS job_stage
+      FROM recordings r
+      LEFT JOIN merge_jobs j ON j.recording_id = r.id
+      WHERE r.subject_id = ?
+      ORDER BY r.created_at ASC
+    `);
   }
 
   close() {
@@ -154,6 +210,13 @@ export class AppDatabase {
 
   #migrate() {
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS subjects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS recordings (
         id TEXT PRIMARY KEY,
         source_type TEXT NOT NULL CHECK (source_type IN ('microphone', 'imported_file')),
@@ -163,6 +226,7 @@ export class AppDatabase {
         normalized_audio_path TEXT,
         audio_sha256 TEXT NOT NULL,
         duration_sec REAL NOT NULL,
+        subject_id TEXT REFERENCES subjects(id),
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -186,6 +250,9 @@ export class AppDatabase {
 
     this.#ensureRecordingColumns();
     this.#ensureMergeJobColumns();
+
+    // Create after ensureRecordingColumns so subject_id column exists for old DBs
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recordings_subject_id ON recordings(subject_id);');
   }
 
   #tableColumns(tableName) {
@@ -200,7 +267,8 @@ export class AppDatabase {
       ['original_file_name', 'ALTER TABLE recordings ADD COLUMN original_file_name TEXT;'],
       ['original_file_path', 'ALTER TABLE recordings ADD COLUMN original_file_path TEXT;'],
       ['normalized_audio_path', 'ALTER TABLE recordings ADD COLUMN normalized_audio_path TEXT;'],
-      ['audio_sha256', "ALTER TABLE recordings ADD COLUMN audio_sha256 TEXT NOT NULL DEFAULT '';"]
+      ['audio_sha256', "ALTER TABLE recordings ADD COLUMN audio_sha256 TEXT NOT NULL DEFAULT '';"],
+      ['subject_id', 'ALTER TABLE recordings ADD COLUMN subject_id TEXT REFERENCES subjects(id);']
     ];
 
     for (const [name, sql] of additions) {
@@ -376,5 +444,59 @@ export class AppDatabase {
       this.db.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  // ─── Subject methods ───
+
+  /**
+   * @param {string} name
+   * @returns {{ id: string; name: string }}
+   */
+  createSubject(name) {
+    const id = randomId('subj');
+    const now = nowIso();
+    this.insertSubjectStmt.run(id, name, now, now);
+    return { id, name };
+  }
+
+  listSubjects() {
+    return this.listSubjectsStmt.all();
+  }
+
+  /**
+   * @param {string} subjectId
+   */
+  getSubject(subjectId) {
+    return this.getSubjectStmt.get(subjectId) ?? null;
+  }
+
+  /**
+   * @param {string} name
+   */
+  getSubjectByName(name) {
+    return this.getSubjectByNameStmt.get(name) ?? null;
+  }
+
+  /**
+   * @param {string} subjectId
+   */
+  listRecordingsBySubject(subjectId) {
+    return this.listRecordingsBySubjectStmt.all(subjectId);
+  }
+
+  /**
+   * @param {string} recordingId
+   * @param {string} subjectId
+   */
+  updateRecordingSubject(recordingId, subjectId) {
+    this.updateRecordingSubjectStmt.run(subjectId, nowIso(), recordingId);
+  }
+
+  /**
+   * @param {string} subjectId
+   */
+  deleteSubject(subjectId) {
+    const info = this.deleteSubjectStmt.run(subjectId);
+    return { deleted: Number(info?.changes || 0) > 0 };
   }
 }
