@@ -674,11 +674,8 @@ app.get('/api/conspects/:recordingId/html', requireAuth, (req, res) => {
     if (!fs.existsSync(htmlPath)) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'HTML result not found' } });
     }
-    res.sendFile(htmlPath, (err) => {
-      if (err && !res.headersSent) {
-        res.status(500).json({ ok: false, error: { code: 'SEND_FAILED', message: `Failed to send HTML: ${err.message}` } });
-      }
-    });
+    const content = fs.readFileSync(htmlPath, 'utf8');
+    res.type('text/html').send(content);
   } catch (error) {
     if (!res.headersSent) {
       const ipcError = asIpcError(error);
@@ -694,11 +691,8 @@ app.get('/api/conspects/:recordingId/md', requireAuth, (req, res) => {
     if (!fs.existsSync(mdPath)) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Markdown result not found' } });
     }
-    res.type('text/markdown').sendFile(mdPath, (err) => {
-      if (err && !res.headersSent) {
-        res.status(500).json({ ok: false, error: { code: 'SEND_FAILED', message: `Failed to send MD: ${err.message}` } });
-      }
-    });
+    const content = fs.readFileSync(mdPath, 'utf8');
+    res.type('text/markdown').send(content);
   } catch (error) {
     if (!res.headersSent) {
       const ipcError = asIpcError(error);
