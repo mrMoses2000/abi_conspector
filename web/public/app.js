@@ -795,8 +795,7 @@ refs.createSubjectBtn.addEventListener('click', async () => {
   try {
     const payload = await apiRequest('/api/subjects', {
       method: 'POST',
-      body: JSON.stringify({ name: name.trim() }),
-      headers: { 'Content-Type': 'application/json' }
+      body: { name: name.trim() }
     });
     await loadSubjects();
     // Auto-select the newly created subject
@@ -804,16 +803,17 @@ refs.createSubjectBtn.addEventListener('click', async () => {
       refs.subjectSelect.value = payload.subject.id;
     }
     setStatus(refs.appStatus, `Предмет "${name.trim()}" создан`);
+    // Show dropzone since subject is now selected
+    refs.uploadZone.classList.remove('hidden');
   } catch (error) {
     setStatus(refs.appStatus, `Ошибка: ${error.message}`, true);
   }
 });
 
-// Block upload if no subject selected
-refs.uploadZone.addEventListener('click', (e) => {
-  if (!refs.subjectSelect?.value) {
-    e.stopPropagation();
-    setStatus(refs.appStatus, 'Сначала выберите предмет', true);
+// Show dropzone when subject is selected
+refs.subjectSelect.addEventListener('change', () => {
+  if (refs.subjectSelect.value) {
+    refs.uploadZone.classList.remove('hidden');
   }
 });
 
@@ -967,8 +967,7 @@ if (syncToRepoBtn) {
       const body = msg?.trim() ? { message: msg.trim() } : {};
       const result = await apiRequest('/api/admin/sync-conspects-to-repo', {
         method: 'POST',
-        body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json' }
+        body: body
       });
       const names = (result.synced || []).map(s => s.name).join(', ');
       setStatus(gitStatus, `✔ Синхронизировано: ${names}`);
