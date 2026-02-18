@@ -3,6 +3,8 @@ import { createWriteStream } from 'node:fs';
 import { ControlledError } from '../utils/errors.js';
 import { runGroqChunkedTranscription } from './sttGroqChunkedWorker.js';
 import { runWhisperCppTranscription } from './sttWhisperCppWorker.js';
+import { runAssemblyAiTranscription } from './sttAssemblyAiWorker.js';
+import { runDeepgramTranscription } from './sttDeepgramWorker.js';
 
 function buildMockTranscript(recording, language) {
   return {
@@ -35,22 +37,63 @@ export async function writeMockTranscript(payload) {
   return transcript;
 }
 
-function normalizeEngine(value, fallback) {
-  const normalized = String(value || '').trim().toLowerCase();
-  if (normalized === 'groq' || normalized === 'whispercpp' || normalized === 'none') {
-    return normalized;
-  }
-  return fallback;
-}
+const KNOWN_ENGINES = ['groq', 'assemblyai', 'deepgram', 'whispercpp'];
 
 function buildEngineRunner(engine) {
-  if (engine === 'groq') {
-    return runGroqChunkedTranscription;
-  }
-  if (engine === 'whispercpp') {
-    return runWhisperCppTranscription;
-  }
+  if (engine === 'groq') return runGroqChunkedTranscription;
+  if (engine === 'assemblyai') return runAssemblyAiTranscription;
+  if (engine === 'deepgram') return runDeepgramTranscription;
+  if (engine === 'whispercpp') return runWhisperCppTranscription;
   return null;
+}
+
+/**
+ * Check if engine has the required API key configured.
+ */
+function isEngineConfigured(engine, sttConfig) {
+  if (engine === 'groq') return !!String(sttConfig.groqApiKey || '').trim();
+  if (engine === 'assemblyai') return !!String(sttConfig.assemblyaiApiKey || '').trim();
+  if (engine === 'deepgram') return !!String(sttConfig.deepgramApiKey || '').trim();
+  if (engine === 'whispercpp') return true; // always available if installed
+  return false;
+}
+
+/**
+ * Build the ordered fallback chain from config.
+ * Supports both legacy (primary+fallback) and new (fallbackChain) config.
+ */
+function buildFallbackChain(sttConfig) {
+  // New-style: explicit ordered chain
+  if (Array.isArray(sttConfig.fallbackChain) && sttConfig.fallbackChain.length > 0) {
+    return sttConfig.fallbackChain.filter((e) => KNOWN_ENGINES.includes(e));
+  }
+
+  // Legacy: primary + fallback
+  const primary = String(sttConfig.primary || 'groq').trim().toLowerCase();
+  const fallback = String(sttConfig.fallback || 'whispercpp').trim().toLowerCase();
+  const chain = [];
+  if (KNOWN_ENGINES.includes(primary)) chain.push(primary);
+  if (KNOWN_ENGINES.includes(fallback) && fallback !== primary && fallback !== 'none') {
+    chain.push(fallback);
+  }
+  return chain.length > 0 ? chain : ['groq'];
+}
+
+/**
+ * Remove partial transcript file if it exists (cleanup after failed provider).
+ */
+async function cleanupPartialTranscript(transcriptPath, onLog) {
+  try {
+    const stat = await fs.stat(transcriptPath).catch(() => null);
+    if (stat && stat.isFile()) {
+      await fs.unlink(transcriptPath);
+      if (typeof onLog === 'function') {
+        onLog('meta', `cleaned up partial transcript file: ${transcriptPath}\n`);
+      }
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
 }
 
 /**
@@ -62,12 +105,16 @@ function buildEngineRunner(engine) {
  *     mode: 'real' | 'mock';
  *     language: string;
  *     timeoutMs: number;
- *     primary: 'groq' | 'whispercpp';
- *     fallback: 'whispercpp' | 'none';
+ *     primary: string;
+ *     fallback: string;
+ *     fallbackChain: string[];
  *     groqApiKey: string;
  *     groqModel: string;
  *     groqMaxFileMb: number;
  *     groqChunkMinutes: number;
+ *     assemblyaiApiKey: string;
+ *     deepgramApiKey: string;
+ *     deepgramModel: string;
  *     whisperCppBin: string;
  *     whisperCppModelPath: string;
  *     whisperCppThreads: number;
@@ -87,10 +134,9 @@ export async function runSttDiarization(payload) {
     });
   }
 
-  const primary = normalizeEngine(sttConfig.primary, 'groq');
-  const fallback = normalizeEngine(sttConfig.fallback, 'whispercpp');
-
+  const chain = buildFallbackChain(sttConfig);
   const logStream = createWriteStream(logPath, { flags: 'a', encoding: 'utf8' });
+
   const emitProgress = (percent, message) => {
     if (typeof onProgress === 'function') {
       onProgress({ percent, message, logPath });
@@ -119,40 +165,65 @@ export async function runSttDiarization(payload) {
     return result;
   };
 
-  emitProgress(20, `stt_engine_${primary}_start`);
-  let fallbackWarning = '';
+  writeLog('meta', `fallback chain: [${chain.join(' → ')}]\n`);
+  emitProgress(20, `stt_chain_start`);
+
+  const errors = [];
+  let fallbackWarnings = [];
 
   try {
-    try {
-      const transcript = await executeEngine(primary);
-      emitProgress(100, 'Транскрибация завершена');
-      return transcript;
-    } catch (primaryError) {
-      const primaryText = primaryError instanceof Error ? primaryError.message : String(primaryError);
-      writeLog('meta', `engine=${primary} failed: ${primaryText}\n`);
+    for (let i = 0; i < chain.length; i++) {
+      const engine = chain[i];
 
-      const shouldFallback = fallback !== 'none' && fallback !== primary;
-      if (!shouldFallback) {
-        throw primaryError;
+      // Check if engine is configured (has API key)
+      if (!isEngineConfigured(engine, sttConfig)) {
+        const skipMsg = `skipping ${engine}: not configured (no API key)`;
+        writeLog('meta', `${skipMsg}\n`);
+        fallbackWarnings.push(skipMsg);
+        continue;
       }
 
-      fallbackWarning = `stt ${primary} failed, fallback to ${fallback}: ${primaryText}`;
-      emitProgress(34, `stt_fallback_${fallback}`);
-      const transcript = await executeEngine(fallback);
-      transcript.warning = fallbackWarning;
-      emitProgress(100, 'Транскрибация завершена (fallback)');
-      return transcript;
+      try {
+        emitProgress(20 + (i * 5), `stt_engine_${engine}_start`);
+        const transcript = await executeEngine(engine);
+
+        // Validate result before accepting
+        if (!Array.isArray(transcript?.segments) || transcript.segments.length === 0) {
+          throw new ControlledError('STT_EMPTY_RESULT', `${engine} returned empty segments`);
+        }
+
+        // Add warnings about fallbacks that were tried
+        if (fallbackWarnings.length > 0) {
+          transcript.warning = fallbackWarnings.join('; ');
+        }
+
+        emitProgress(100, 'Транскрибация завершена');
+        return transcript;
+      } catch (engineError) {
+        const errorText = engineError instanceof Error ? engineError.message : String(engineError);
+        writeLog('meta', `engine=${engine} failed: ${errorText}\n`);
+        errors.push({ engine, error: errorText });
+
+        // CRITICAL: Clean up partial transcript file before trying next engine
+        await cleanupPartialTranscript(transcriptPath, writeLog);
+
+        const isLast = i === chain.length - 1;
+        if (!isLast) {
+          fallbackWarnings.push(`stt ${engine} failed, trying next: ${errorText}`);
+          emitProgress(20 + ((i + 1) * 5), `stt_fallback_after_${engine}`);
+        }
+      }
     }
-  } catch (error) {
-    writeLog('meta', `failed ${error instanceof Error ? error.message : 'unknown error'}\n`);
-    if (error instanceof ControlledError) {
-      throw new ControlledError('STT_DIARIZATION_FAILED', `${error.message}. Лог: ${logPath}`);
-    }
-    throw error;
+
+    // All engines failed
+    const summary = errors.map((e) => `${e.engine}: ${e.error}`).join(' | ');
+    throw new ControlledError(
+      'STT_ALL_ENGINES_FAILED',
+      `All STT engines failed: ${summary}. Chain: [${chain.join(' → ')}]. Лог: ${logPath}`
+    );
   } finally {
     await new Promise((resolve) => {
       logStream.end(resolve);
     });
   }
 }
-

@@ -59,6 +59,12 @@ export function getRuntimeConfig() {
   const sttPrimary = parseEnum(process.env.CONSPECTOR_STT_PRIMARY, ['groq', 'whispercpp'], 'groq');
   const sttFallback = parseEnum(process.env.CONSPECTOR_STT_FALLBACK, ['whispercpp', 'none'], 'whispercpp');
 
+  // Parse fallback chain: comma-separated list of engines in priority order
+  const rawChain = (process.env.CONSPECTOR_STT_FALLBACK_CHAIN || '').trim();
+  const fallbackChain = rawChain
+    ? rawChain.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
+    : []; // empty = use legacy primary/fallback
+
   return {
     ffmpeg: {
       sampleRateHz: 16_000,
@@ -69,6 +75,7 @@ export function getRuntimeConfig() {
       mode: sttMode,
       primary: sttPrimary,
       fallback: sttFallback,
+      fallbackChain,
       model: process.env.CONSPECTOR_WHISPER_MODEL || 'medium',
       language: process.env.CONSPECTOR_STT_LANGUAGE || 'ru',
       timeoutMs: parseIntSafe(process.env.CONSPECTOR_STT_TIMEOUT_SEC, 1800) * 1000,
@@ -76,6 +83,9 @@ export function getRuntimeConfig() {
       groqModel: process.env.CONSPECTOR_GROQ_MODEL || 'whisper-large-v3',
       groqMaxFileMb: parseIntSafe(process.env.CONSPECTOR_GROQ_MAX_FILE_MB, 25),
       groqChunkMinutes: parseIntSafe(process.env.CONSPECTOR_GROQ_CHUNK_MIN, 18),
+      assemblyaiApiKey: process.env.ASSEMBLYAI_API_KEY || '',
+      deepgramApiKey: process.env.DEEPGRAM_API_KEY || '',
+      deepgramModel: process.env.CONSPECTOR_DEEPGRAM_MODEL || 'nova-2',
       whisperCppBin: process.env.CONSPECTOR_WHISPERCPP_BIN || 'whisper-cli',
       whisperCppModelPath:
         process.env.CONSPECTOR_WHISPERCPP_MODEL_PATH || path.join(projectRoot, 'models', 'ggml-base.bin'),

@@ -259,16 +259,29 @@ async function resolvePageId(client, pageId, title, rootPageId, recording) {
     if (match) {
       return match.id;
     }
-    const suggestions = buildPageSuggestions(nestedPages, normalizedTitle, 12);
-    throw new ControlledError(
-      'NOTION_PAGE_NOT_FOUND_IN_ROOT',
-      `Page "${normalizedTitle}" not found under configured root page.`,
-      {
-        requestedTitle: normalizedTitle,
-        rootPageId: scopedRootId,
-        suggestions
-      }
-    );
+    // Auto-create child page under root if not found
+    try {
+      const newPage = await withRetries(() =>
+        client.pages.create({
+          parent: { page_id: scopedRootId },
+          properties: {
+            title: [{ text: { content: normalizedTitle } }]
+          }
+        })
+      );
+      return newPage.id;
+    } catch (createError) {
+      const suggestions = buildPageSuggestions(nestedPages, normalizedTitle, 12);
+      throw new ControlledError(
+        'NOTION_PAGE_NOT_FOUND_IN_ROOT',
+        `Page "${normalizedTitle}" not found and could not be auto-created: ${createError instanceof Error ? createError.message : 'unknown'}`,
+        {
+          requestedTitle: normalizedTitle,
+          rootPageId: scopedRootId,
+          suggestions
+        }
+      );
+    }
   }
 
   if (normalizedPageId) {

@@ -408,6 +408,26 @@ run_configure_env() {
   set_env_value "CONSPECTOR_GROQ_MAX_FILE_MB" "$(read_prompt "Groq max file size MB" "$(get_env_value "CONSPECTOR_GROQ_MAX_FILE_MB" "25")")"
   set_env_value "CONSPECTOR_GROQ_CHUNK_MIN" "$(read_prompt "Groq chunk length (minutes)" "$(get_env_value "CONSPECTOR_GROQ_CHUNK_MIN" "18")")"
 
+  # AssemblyAI (free tier: 185 hours — assemblyai.com/dashboard)
+  local aai_key_current
+  aai_key_current="$(get_env_value "ASSEMBLYAI_API_KEY" "")"
+  local aai_key
+  aai_key="$(read_secret_prompt "AssemblyAI API key (optional, free 185h)" "$aai_key_current")"
+  set_env_value "ASSEMBLYAI_API_KEY" "$aai_key"
+
+  # Deepgram (free tier: $200 credit — console.deepgram.com)
+  local dg_key_current
+  dg_key_current="$(get_env_value "DEEPGRAM_API_KEY" "")"
+  local dg_key
+  dg_key="$(read_secret_prompt "Deepgram API key (optional, free \$200)" "$dg_key_current")"
+  set_env_value "DEEPGRAM_API_KEY" "$dg_key"
+  set_env_value "CONSPECTOR_DEEPGRAM_MODEL" "$(read_prompt "Deepgram model" "$(get_env_value "CONSPECTOR_DEEPGRAM_MODEL" "nova-2")")"
+
+  # STT Fallback Chain (comma-separated priority order)
+  local chain_default
+  chain_default="$(get_env_value "CONSPECTOR_STT_FALLBACK_CHAIN" "groq,assemblyai,deepgram,whispercpp")"
+  set_env_value "CONSPECTOR_STT_FALLBACK_CHAIN" "$(read_prompt "STT fallback chain (comma-separated)" "$chain_default")"
+
   set_env_value "CONSPECTOR_WHISPERCPP_BIN" "$(read_prompt "whisper.cpp binary path" "$(normalize_project_path_value "$(get_env_value "CONSPECTOR_WHISPERCPP_BIN" "$DEFAULT_WHISPER_BIN")")")"
   set_env_value "CONSPECTOR_WHISPERCPP_MODEL_PATH" "$(read_prompt "whisper.cpp model path" "$(normalize_project_path_value "$(get_env_value "CONSPECTOR_WHISPERCPP_MODEL_PATH" "$DEFAULT_WHISPER_MODEL")")")"
   set_env_value "CONSPECTOR_WHISPERCPP_THREADS" "$(read_prompt "whisper.cpp threads" "$(get_env_value "CONSPECTOR_WHISPERCPP_THREADS" "2")")"

@@ -571,6 +571,26 @@ app.get('/api/subjects/:subjectId/md', requireAuth, (req, res) => {
 
 app.post('/api/subjects/:subjectId/notion', requireAuth, requireAdmin, async (req, res) => {
   try {
+    // Early check: reject if Notion is disabled
+    if (process.env.CONSPECTOR_NOTION_MODE !== 'real') {
+      return res.status(400).json({
+        ok: false,
+        error: {
+          code: 'NOTION_DISABLED',
+          message: 'Notion writeback отключён. Установите CONSPECTOR_NOTION_MODE=real в .env на сервере.'
+        }
+      });
+    }
+    if (!process.env.NOTION_TOKEN) {
+      return res.status(400).json({
+        ok: false,
+        error: {
+          code: 'NOTION_TOKEN_MISSING',
+          message: 'NOTION_TOKEN не настроен в .env на сервере.'
+        }
+      });
+    }
+
     const subject = appDb.getSubject(req.params.subjectId);
     if (!subject) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Subject not found' } });
@@ -582,8 +602,8 @@ app.post('/api/subjects/:subjectId/notion', requireAuth, requireAdmin, async (re
     }
 
     const notionConfig = {
-      mode: process.env.CONSPECTOR_NOTION_MODE === 'real' ? 'real' : 'off',
-      token: process.env.NOTION_TOKEN || '',
+      mode: 'real',
+      token: process.env.NOTION_TOKEN,
       pageId: process.env.CONSPECTOR_NOTION_PAGE_ID || '',
       pageTitle: subject.name,
       rootPageId: process.env.CONSPECTOR_NOTION_ROOT_PAGE_ID || '',
