@@ -797,34 +797,33 @@ async function loadLibraryConspect(recordingId) {
   refs.libraryDownloadMd.disabled = false;
   state.libraryRecordingId = recordingId;
 
-  // Check if HTML is available for this item
-  const selectedOption = refs.librarySelect.selectedOptions[0];
-  const hasHtml = selectedOption?.dataset.hasHtml === '1';
+  // Always try HTML first, fallback to MD if HTML fails
+  try {
+    const html = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/html`, {
+      responseType: 'text'
+    });
+    refs.libraryContent.textContent = '';
+    const iframe = document.createElement('iframe');
+    iframe.className = 'viewer-iframe';
+    iframe.sandbox = 'allow-same-origin';
+    iframe.srcdoc = html;
+    refs.libraryContent.appendChild(iframe);
+    return;
+  } catch (_htmlError) {
+    // HTML not available — try MD fallback
+  }
 
   try {
-    if (hasHtml) {
-      const html = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/html`, {
-        responseType: 'text'
-      });
-      refs.libraryContent.textContent = '';
-      const iframe = document.createElement('iframe');
-      iframe.className = 'viewer-iframe';
-      iframe.sandbox = 'allow-same-origin';
-      iframe.srcdoc = html;
-      refs.libraryContent.appendChild(iframe);
-    } else {
-      // Fallback: fetch markdown and display as preformatted text
-      const mdText = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/md`, {
-        responseType: 'text'
-      });
-      refs.libraryContent.textContent = '';
-      const pre = document.createElement('pre');
-      pre.className = 'library-md-fallback';
-      pre.textContent = mdText;
-      refs.libraryContent.appendChild(pre);
-    }
-  } catch (error) {
-    refs.libraryContent.textContent = `Ошибка: ${error.message}`;
+    const mdText = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/md`, {
+      responseType: 'text'
+    });
+    refs.libraryContent.textContent = '';
+    const pre = document.createElement('pre');
+    pre.className = 'library-md-fallback';
+    pre.textContent = mdText;
+    refs.libraryContent.appendChild(pre);
+  } catch (mdError) {
+    refs.libraryContent.textContent = `Конспект не найден. HTML и Markdown недоступны. Возможно файлы не были сгенерированы.`;
   }
 }
 

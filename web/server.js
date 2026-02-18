@@ -707,6 +707,34 @@ app.get('/api/conspects/:recordingId/md', requireAuth, (req, res) => {
   }
 });
 
+// ─── Diagnostic: check file existence for a recording ───
+app.get('/api/admin/debug-files/:recordingId', requireAuth, requireAdmin, (req, res) => {
+  try {
+    const recordingId = sanitizeRecordingId(req.params.recordingId);
+    const files = {
+      html: path.resolve(dataRoot, 'html', `${recordingId}.html`),
+      merged: path.resolve(dataRoot, 'merged', `${recordingId}.md`),
+      structured: path.resolve(dataRoot, 'structured', `${recordingId}.md`),
+      transcript: path.resolve(dataRoot, 'transcripts', `${recordingId}.json`)
+    };
+    const result = { dataRoot, recordingId, files: {} };
+    for (const [key, filePath] of Object.entries(files)) {
+      const exists = fs.existsSync(filePath);
+      result.files[key] = {
+        path: filePath,
+        exists,
+        size: exists ? fs.statSync(filePath).size : null
+      };
+    }
+    res.json({ ok: true, ...result });
+  } catch (error) {
+    if (!res.headersSent) {
+      const ipcError = asIpcError(error);
+      res.status(error instanceof ControlledError ? 400 : 500).json({ ok: false, error: ipcError });
+    }
+  }
+});
+
 app.get('/api/admin/users', requireAuth, requireAdmin, (_req, res) => {
   const users = listUsersStmt.all().map((row) => ({
     id: row.id,
