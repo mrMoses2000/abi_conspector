@@ -533,14 +533,15 @@ refs.logoutBtn.addEventListener('click', async () => {
 });
 
 async function notionWriteback(recordingId, fileName) {
-  const pageTitle = prompt(`Название подстраницы Notion для "${fileName || recordingId}":`);
-  if (!pageTitle || !pageTitle.trim()) return;
+  if (!confirm('Отправить конспект в Notion?')) return;
 
-  setStatus(refs.appStatus, `Notion writeback: ${recordingId} → ${pageTitle}...`);
+  setStatus(refs.appStatus, `Notion writeback: ${recordingId}...`);
   try {
+    // Use file name as fallback title (subject-level writeback uses subject name automatically)
+    const pageTitle = fileName || recordingId;
     const result = await apiRequest('/api/admin/notion-writeback', {
       method: 'POST',
-      body: { recordingId, pageTitle: pageTitle.trim() }
+      body: { recordingId, pageTitle }
     });
     const target = result?.targetPageId ? `target=${result.targetPageId}` : '';
     setStatus(refs.appStatus, `Writeback выполнен! ${target}`);
