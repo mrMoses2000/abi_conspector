@@ -43,7 +43,10 @@ function normalizeSegments(rawSegments) {
   let fallbackCursorSec = 0;
   const normalized = [];
   for (const raw of rawSegments) {
-    const text = String(raw?.text ?? '').trim();
+    // Strip whisper-cpp timestamp patterns: [HH:MM:SS.mmm --> HH:MM:SS.mmm]
+    let text = String(raw?.text ?? '')
+      .replace(/\[\d{2}:\d{2}:\d{2}\.\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}\.\d{3}\]\s*/g, '')
+      .trim();
     if (!text) {
       continue;
     }
