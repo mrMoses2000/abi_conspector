@@ -99,10 +99,17 @@ export class AppDatabase {
         normalized_audio_path,
         audio_sha256,
         subject_id,
+        llm_model,
         duration_sec,
         created_at,
         updated_at
       FROM recordings
+      WHERE id = ?
+    `);
+
+    this.updateRecordingLlmModelStmt = this.db.prepare(`
+      UPDATE recordings
+      SET llm_model = ?, updated_at = ?
       WHERE id = ?
     `);
 
@@ -270,7 +277,8 @@ export class AppDatabase {
       ['original_file_path', 'ALTER TABLE recordings ADD COLUMN original_file_path TEXT;'],
       ['normalized_audio_path', 'ALTER TABLE recordings ADD COLUMN normalized_audio_path TEXT;'],
       ['audio_sha256', "ALTER TABLE recordings ADD COLUMN audio_sha256 TEXT NOT NULL DEFAULT '';"],
-      ['subject_id', 'ALTER TABLE recordings ADD COLUMN subject_id TEXT REFERENCES subjects(id);']
+      ['subject_id', 'ALTER TABLE recordings ADD COLUMN subject_id TEXT REFERENCES subjects(id);'],
+      ['llm_model', "ALTER TABLE recordings ADD COLUMN llm_model TEXT DEFAULT 'auto';"]
     ];
 
     for (const [name, sql] of additions) {
@@ -332,6 +340,14 @@ export class AppDatabase {
    */
   updateRecordingNormalization(recordingId, normalizedAudioPath) {
     this.updateRecordingNormalizationStmt.run(normalizedAudioPath, nowIso(), recordingId);
+  }
+
+  /**
+   * @param {string} recordingId
+   * @param {string} llmModel
+   */
+  updateRecordingLlmModel(recordingId, llmModel) {
+    this.updateRecordingLlmModelStmt.run(llmModel || 'auto', nowIso(), recordingId);
   }
 
   /**

@@ -710,6 +710,10 @@ async function uploadFile(file) {
       if (subjectId) {
         formData.append('subjectId', subjectId);
       }
+      // Attach selected LLM model
+      const llmModelSelect = document.getElementById('llm-model-select');
+      const llmModel = llmModelSelect?.value || 'auto';
+      formData.append('llmModel', llmModel);
       xhr.send(formData);
     });
 

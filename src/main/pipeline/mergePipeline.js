@@ -3,9 +3,54 @@ import path from 'node:path';
 import { normalizeToFlac } from '../audio/ffmpeg.js';
 import { ControlledError } from '../utils/errors.js';
 import { runSttDiarization } from '../workers/sttWorker.js';
-import { getStructureWorker, getMergeWorker, getMergeFromMarkdownWorker, getLlmConfigKey } from '../workers/llmProvider.js';
+import { getStructureWorker, getMergeWorker, getMergeFromMarkdownWorker, getLlmConfigKey, buildLlmFallbackChain } from '../workers/llmProvider.js';
 import { renderEmergencyHtml, renderHtmlFromMarkdown } from '../workers/htmlWorker.js';
 import { writeMergedToNotion } from '../workers/notionWorker.js';
+
+/**
+ * Execute an LLM stage with automatic fallback through the chain.
+ * @param {Array<{provider: string; label: string; configKey: string; configOverrides: object}>} chain
+ * @param {any} runtimeConfig
+ * @param {(msg: string) => void} appendWarning
+ * @param {string} stageName
+ * @param {(provider: string, llmConfig: any) => Promise<void>} runner
+ */
+async function executeWithLlmFallback(chain, runtimeConfig, appendWarning, stageName, runner) {
+  const errors = [];
+
+  for (let i = 0; i < chain.length; i++) {
+    const entry = chain[i];
+    const baseConfig = runtimeConfig[entry.configKey] || {};
+    const llmConfig = { ...baseConfig, ...entry.configOverrides };
+
+    try {
+      await runner(entry.provider, llmConfig);
+      if (errors.length > 0) {
+        appendWarning(`${stageName}: ${errors.map(e => e.label).join(', ')} failed → used ${entry.label}`);
+      }
+      return;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      errors.push({ label: entry.label, error: msg });
+
+      const isLast = i === chain.length - 1;
+      if (!isLast) {
+        continue; // Try next in chain
+      }
+
+      // All entries failed → try mock if allowed
+      if (runtimeConfig.resilience.codexFallbackToMock && llmConfig.mode === 'real') {
+        appendWarning(
+          `${stageName}: all LLM providers failed [${errors.map(e => `${e.label}: ${e.error}`).join('; ')}], fallback to mock`
+        );
+        await runner(entry.provider, { ...llmConfig, mode: 'mock' });
+        return;
+      }
+
+      throw error;
+    }
+  }
+}
 
 /**
  * @param {{
@@ -131,71 +176,22 @@ export function createMergePipeline(deps) {
         }
       });
 
-      await stage('codex_structure', async () => {
-        const llmConfigKey = getLlmConfigKey(runtimeConfig.llm?.provider || 'codex');
-        const llmConfig = runtimeConfig[llmConfigKey];
-        const runStructure = getStructureWorker(runtimeConfig.llm?.provider || 'codex');
-        try {
-          await runStructure({
-            transcriptPath,
-            structuredPath,
-            recording,
-            llmConfig
-          });
-        } catch (error) {
-          const canFallback =
-            runtimeConfig.resilience.codexFallbackToMock && llmConfig.mode === 'real';
-          if (!canFallback) {
-            throw error;
-          }
+      // Build LLM chain once (from per-job model selection or auto)
+      const llmModel = recording.llm_model || 'auto';
+      const llmChain = buildLlmFallbackChain(llmModel, runtimeConfig);
 
-          appendWarning(
-            `codex_structure failed, fallback to mock: ${error instanceof Error ? error.message : 'unknown error'
-            }`
-          );
-          await runStructure({
-            transcriptPath,
-            structuredPath,
-            recording,
-            llmConfig: {
-              ...llmConfig,
-              mode: 'mock'
-            }
-          });
-        }
+      await stage('codex_structure', async () => {
+        await executeWithLlmFallback(llmChain, runtimeConfig, appendWarning, 'codex_structure', async (provider, llmConfig) => {
+          const runStructure = getStructureWorker(provider);
+          await runStructure({ transcriptPath, structuredPath, recording, llmConfig });
+        });
       });
 
       await stage('merge', async () => {
-        const llmConfigKey = getLlmConfigKey(runtimeConfig.llm?.provider || 'codex');
-        const llmConfig = runtimeConfig[llmConfigKey];
-        const runMerge = getMergeWorker(runtimeConfig.llm?.provider || 'codex');
-        try {
-          await runMerge({
-            structuredPath,
-            mergedPath,
-            recording,
-            llmConfig
-          });
-        } catch (error) {
-          const canFallback =
-            runtimeConfig.resilience.codexFallbackToMock && llmConfig.mode === 'real';
-          if (!canFallback) {
-            throw error;
-          }
-
-          appendWarning(
-            `merge failed, fallback to mock: ${error instanceof Error ? error.message : 'unknown error'}`
-          );
-          await runMerge({
-            structuredPath,
-            mergedPath,
-            recording,
-            llmConfig: {
-              ...llmConfig,
-              mode: 'mock'
-            }
-          });
-        }
+        await executeWithLlmFallback(llmChain, runtimeConfig, appendWarning, 'merge', async (provider, llmConfig) => {
+          const runMerge = getMergeWorker(provider);
+          await runMerge({ structuredPath, mergedPath, recording, llmConfig });
+        });
       });
 
       await stage('render_html', async () => {
@@ -239,20 +235,14 @@ export function createMergePipeline(deps) {
         const subjectHtmlPath = path.join(subjectDir, 'conspect.html');
 
         await stage('merge_subject', async () => {
-          const llmConfigKey = getLlmConfigKey(runtimeConfig.llm?.provider || 'codex');
-          const llmConfig = runtimeConfig[llmConfigKey];
-          const runMergeFromMd = getMergeFromMarkdownWorker(runtimeConfig.llm?.provider || 'codex');
-
-          // Read the new structured MD
           const structuredMd = await fs.readFile(structuredPath, 'utf8');
-
-          // Read existing subject conspect (if any)
           let existingSubjectMd = '';
           try {
             existingSubjectMd = await fs.readFile(subjectMergedPath, 'utf8');
           } catch { /* first recording for this subject */ }
 
-          try {
+          await executeWithLlmFallback(llmChain, runtimeConfig, appendWarning, 'merge_subject', async (provider, llmConfig) => {
+            const runMergeFromMd = getMergeFromMarkdownWorker(provider);
             await runMergeFromMd({
               structuredMarkdown: structuredMd,
               baseMarkdown: existingSubjectMd,
@@ -260,23 +250,7 @@ export function createMergePipeline(deps) {
               recording,
               llmConfig
             });
-          } catch (error) {
-            const canFallback =
-              runtimeConfig.resilience.codexFallbackToMock && llmConfig.mode === 'real';
-            if (!canFallback) {
-              throw error;
-            }
-            appendWarning(
-              `merge_subject failed, fallback to mock: ${error instanceof Error ? error.message : 'unknown error'}`
-            );
-            await runMergeFromMd({
-              structuredMarkdown: structuredMd,
-              baseMarkdown: existingSubjectMd,
-              outputPath: subjectMergedPath,
-              recording,
-              llmConfig: { ...llmConfig, mode: 'mock' }
-            });
-          }
+          });
         });
 
         await stage('render_subject_html', async () => {

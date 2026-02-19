@@ -751,6 +751,12 @@ app.post('/api/upload', requireAuth, upload.single('audio'), async (req, res) =>
       cleanupOnError: true
     });
 
+    // Save LLM model selection from UI (for per-job fallback chain)
+    const llmModel = String(req.body?.llmModel || 'auto').trim();
+    if (result.recordingId) {
+      appDb.updateRecordingLlmModel(result.recordingId, llmModel);
+    }
+
     res.json({
       ok: true,
       recordingId: result.recordingId,
