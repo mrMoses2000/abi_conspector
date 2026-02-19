@@ -206,6 +206,16 @@ function parseEnum2(value, allowed, fallback) {
   const n = String(value ?? '').trim().toLowerCase();
   return allowed.includes(n) ? n : fallback;
 }
+function parseFallbackChain(value) {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return [];
+  }
+  return raw
+    .split(',')
+    .map((v) => v.trim().toLowerCase())
+    .filter(Boolean);
+}
 const managedPaths = {
   root: dataRoot,
   audio: path.join(dataRoot, 'audio'),
@@ -227,6 +237,7 @@ const runtimeConfig = {
     mode: process.env.CONSPECTOR_STT_MODE === 'mock' ? 'mock' : 'real',
     primary: parseEnum2(process.env.CONSPECTOR_STT_PRIMARY, ['groq', 'whispercpp'], 'groq'),
     fallback: parseEnum2(process.env.CONSPECTOR_STT_FALLBACK, ['whispercpp', 'none'], 'whispercpp'),
+    fallbackChain: parseFallbackChain(process.env.CONSPECTOR_STT_FALLBACK_CHAIN),
     model: process.env.CONSPECTOR_WHISPER_MODEL || 'medium',
     language: process.env.CONSPECTOR_STT_LANGUAGE || 'ru',
     timeoutMs: parseIntSafe2(process.env.CONSPECTOR_STT_TIMEOUT_SEC, 1800) * 1000,
@@ -234,6 +245,9 @@ const runtimeConfig = {
     groqModel: process.env.CONSPECTOR_GROQ_MODEL || 'whisper-large-v3-turbo',
     groqMaxFileMb: parseIntSafe2(process.env.CONSPECTOR_GROQ_MAX_FILE_MB, 25),
     groqChunkMinutes: parseIntSafe2(process.env.CONSPECTOR_GROQ_CHUNK_MIN, 18),
+    assemblyaiApiKey: process.env.ASSEMBLYAI_API_KEY || '',
+    deepgramApiKey: process.env.DEEPGRAM_API_KEY || '',
+    deepgramModel: process.env.CONSPECTOR_DEEPGRAM_MODEL || 'nova-2',
     whisperCppBin: process.env.CONSPECTOR_WHISPERCPP_BIN || 'whisper-cli',
     whisperCppModelPath: process.env.CONSPECTOR_WHISPERCPP_MODEL_PATH || path.join(projectRoot, 'models', 'ggml-base.bin'),
     whisperCppThreads: parseIntSafe2(process.env.CONSPECTOR_WHISPERCPP_THREADS, 2)
