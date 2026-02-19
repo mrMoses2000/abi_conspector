@@ -137,6 +137,45 @@ function formatDate(value) {
   return date.toLocaleString('ru-RU');
 }
 
+function stripFileExtension(fileName) {
+  const value = String(fileName || '').trim();
+  if (!value) {
+    return '';
+  }
+  return value.replace(/\.[^./\\]+$/, '').trim();
+}
+
+function deriveNotionPageTitle(item) {
+  const subjectName = String(item?.subjectName || '').trim();
+  if (subjectName) {
+    return subjectName;
+  }
+  const fromFile = stripFileExtension(item?.fileName || '');
+  if (fromFile) {
+    return fromFile;
+  }
+  return String(item?.recordingId || '').trim();
+}
+
+function extractSuggestionTitles(errorDetails) {
+  if (!errorDetails || typeof errorDetails !== 'object') {
+    return [];
+  }
+  const source = Array.isArray(errorDetails.suggestions) ? errorDetails.suggestions : [];
+  return source
+    .map((item) => {
+      if (typeof item === 'string') {
+        return item.trim();
+      }
+      if (item && typeof item === 'object' && typeof item.title === 'string') {
+        return item.title.trim();
+      }
+      return '';
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
 function saveToken(token) {
   state.token = token || '';
   if (state.token) {
@@ -228,7 +267,8 @@ function renderConspects(items) {
     meta.className = 'muted';
     meta.style.fontSize = '12px';
     meta.style.fontFamily = "'JetBrains Mono', monospace";
-    meta.textContent = `${item.recordingId} · ${formatDuration(item.durationSec)} · ${formatDate(item.createdAt)}`;
+    const subjectChunk = item.subjectName ? ` · ${item.subjectName}` : '';
+    meta.textContent = `${item.recordingId}${subjectChunk} · ${formatDuration(item.durationSec)} · ${formatDate(item.createdAt)}`;
     fileCell.append(title, meta);
 
     const statusCell = document.createElement('td');
@@ -293,7 +333,7 @@ function renderConspects(items) {
         notionBtn.style.marginLeft = '6px';
         notionBtn.textContent = 'Notion';
         notionBtn.addEventListener('click', () => {
-          notionWriteback(item.recordingId, item.fileName);
+          notionWriteback(item);
         });
         actionsCell.appendChild(notionBtn);
       }
@@ -532,22 +572,39 @@ refs.logoutBtn.addEventListener('click', async () => {
   await handleLogout(false);
 });
 
-async function notionWriteback(recordingId, fileName) {
-  if (!confirm('Отправить конспект в Notion?')) return;
+async function notionWriteback(item) {
+  const recordingId = String(item?.recordingId || '').trim();
+  if (!recordingId) {
+    setStatus(refs.appStatus, 'Ошибка writeback: recordingId is empty', true);
+    return;
+  }
 
-  setStatus(refs.appStatus, `Notion writeback: ${recordingId}...`);
+  const pageTitle = deriveNotionPageTitle(item);
+  if (!pageTitle) {
+    setStatus(refs.appStatus, `Ошибка writeback: не удалось определить название подстраницы для ${recordingId}`, true);
+    return;
+  }
+
+  const confirmText = `Отправить конспект в Notion?\n\nБудет искаться подстраница: "${pageTitle}"`;
+  if (!confirm(confirmText)) return;
+
+  setStatus(refs.appStatus, `Notion writeback: ${recordingId}. Ищем подстраницу "${pageTitle}"...`);
   try {
-    // Use file name as fallback title (subject-level writeback uses subject name automatically)
-    const pageTitle = fileName || recordingId;
     const result = await apiRequest('/api/admin/notion-writeback', {
       method: 'POST',
       body: { recordingId, pageTitle }
     });
-    const target = result?.targetPageId ? `target=${result.targetPageId}` : '';
-    setStatus(refs.appStatus, `Writeback выполнен! ${target}`);
+    const requestedTitle = result?.targetPageTitleRequested || pageTitle;
+    const resolvedTitle = result?.targetPageTitleResolved ? `"${result.targetPageTitleResolved}"` : '(n/a)';
+    const targetPageId = result?.targetPageId || result?.pageId || '';
+    const strategy = result?.targetPageLookupStrategy || '';
+    setStatus(
+      refs.appStatus,
+      `Writeback выполнен. Искомая: "${requestedTitle}". Найдена: ${resolvedTitle}${targetPageId ? ` (id=${targetPageId})` : ''}${strategy ? `, strategy=${strategy}` : ''}`
+    );
     await loadConspects();
   } catch (error) {
-    const suggestions = Array.isArray(error?.details?.suggestions) ? error.details.suggestions : [];
+    const suggestions = extractSuggestionTitles(error?.details);
     if (suggestions.length > 0) {
       setStatus(refs.appStatus, `Ошибка writeback: ${error.message}. Подсказки: ${suggestions.slice(0, 6).join(', ')}`, true);
       return;
@@ -931,14 +988,23 @@ refs.libraryDownloadMd.addEventListener('click', async () => {
 refs.libraryNotionBtn.addEventListener('click', async () => {
   const subjectId = state.librarySubjectId;
   if (!subjectId) return;
-  if (!confirm('Отправить конспект в Notion?')) return;
+  const selectedOption = refs.librarySelect?.options?.[refs.librarySelect.selectedIndex];
+  const subjectLabelRaw = String(selectedOption?.textContent || '').trim();
+  const subjectLabel = subjectLabelRaw.replace(/\s+\(\d+\s+аудио\)\s*$/, '').trim() || subjectLabelRaw || subjectId;
+  if (!confirm(`Отправить конспект в Notion?\n\nБудет искаться подстраница: "${subjectLabel}"`)) return;
   try {
     refs.libraryNotionBtn.disabled = true;
     refs.libraryNotionBtn.textContent = '↑ Отправка...';
-    await apiRequest(`/api/subjects/${encodeURIComponent(subjectId)}/notion`, {
+    const result = await apiRequest(`/api/subjects/${encodeURIComponent(subjectId)}/notion`, {
       method: 'POST'
     });
+    const requestedTitle = result?.targetPageTitleRequested || subjectLabel;
+    const resolvedTitle = result?.targetPageTitleResolved ? `"${result.targetPageTitleResolved}"` : '(n/a)';
     refs.libraryNotionBtn.textContent = '\u2714 Отправлено!';
+    setStatus(
+      refs.appStatus,
+      `Notion: искали "${requestedTitle}", нашли ${resolvedTitle}${result?.targetPageId || result?.pageId ? ` (id=${result?.targetPageId || result?.pageId})` : ''}`
+    );
     setTimeout(() => {
       refs.libraryNotionBtn.textContent = '\u2191 Notion';
       refs.libraryNotionBtn.disabled = false;

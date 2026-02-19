@@ -15,6 +15,7 @@ import { MergeQueue } from './pipeline/mergeQueue.js';
 import { registerIpcHandlers } from './ipc/registerHandlers.js';
 import { cleanupOldFiles } from './utils/retention.js';
 import { writeMergedToNotion } from './workers/notionWorker.js';
+import { getMergeFromMarkdownWorker, getLlmConfigKey } from './workers/llmProvider.js';
 import { ControlledError } from './utils/errors.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -190,14 +191,18 @@ if (gotSingleInstanceLock) {
         pageTitle: requestedPageTitle
       };
 
-    return writeMergedToNotion({
-      mergedPath,
-      recording,
-      backupsDir: managedPaths.backups,
-      notionConfig,
-      codexConfig: config.codex
-    });
-  };
+      const llmProvider = config.llm?.provider || 'codex';
+      const llmConfigKey = getLlmConfigKey(llmProvider);
+
+      return writeMergedToNotion({
+        mergedPath,
+        recording,
+        backupsDir: managedPaths.backups,
+        notionConfig,
+        llmMergeFromMarkdown: getMergeFromMarkdownWorker(llmProvider),
+        llmConfig: config[llmConfigKey]
+      });
+    };
 
     const cleanupFailedJobs = async () => {
       const result = db.cleanupFailedJobs();

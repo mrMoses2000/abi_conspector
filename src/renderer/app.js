@@ -513,6 +513,7 @@ writebackNotionBtn.addEventListener('click', () => {
       return;
     }
 
+    setImportStatus(`Notion: ищем подстраницу "${pageTitle}"...`);
     const result = await api.writebackNotion(selected.recording_id, pageTitle);
     if (!result?.ok) {
       const error = result?.error || {};
@@ -537,8 +538,12 @@ writebackNotionBtn.addEventListener('click', () => {
     }
 
     const logFile = typeof result.logPath === 'string' ? result.logPath.split(/[\\/]/).pop() : '';
+    const requestedTitle = result?.targetPageTitleRequested || pageTitle;
+    const resolvedTitle = result?.targetPageTitleResolved ? `"${result.targetPageTitleResolved}"` : '(n/a)';
+    const targetPageId = result?.targetPageId || result?.pageId || '';
+    const strategy = result?.targetPageLookupStrategy || '';
     setImportStatus(
-      `Notion: записано ${result?.blocksWritten ?? 0} блоков${logFile ? ` (лог: ${logFile})` : ''}`
+      `Notion: искали "${requestedTitle}", нашли ${resolvedTitle}${targetPageId ? ` (id=${targetPageId})` : ''}${strategy ? `, strategy=${strategy}` : ''}; записано ${result?.blocksWritten ?? 0} блоков${logFile ? ` (лог: ${logFile})` : ''}`
     );
   });
 });

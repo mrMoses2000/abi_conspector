@@ -247,7 +247,7 @@ async function listNestedPages(client, rootPageId) {
  * @param {string} rootPageId
  * @param {any} recording
  */
-async function resolvePageId(client, pageId, title, rootPageId, recording) {
+async function resolvePageTarget(client, pageId, title, rootPageId, recording) {
   const normalizedTitle = String(title || '').trim();
   const normalizedPageId = String(pageId || '').trim();
   const normalizedRootPageId = String(rootPageId || '').trim();
@@ -257,43 +257,58 @@ async function resolvePageId(client, pageId, title, rootPageId, recording) {
     const nestedPages = await listNestedPages(client, scopedRootId);
     const match = choosePageByTitle(nestedPages, [normalizedTitle]);
     if (match) {
-      return match.id;
+      return {
+        id: match.id,
+        title: match.title,
+        requestedTitle: normalizedTitle,
+        matchedBy: match.matchedBy,
+        strategy: `root_${match.strategy || 'match'}`
+      };
     }
-    // Auto-create child page under root if not found
-    try {
-      const newPage = await withRetries(() =>
-        client.pages.create({
-          parent: { page_id: scopedRootId },
-          properties: {
-            title: [{ text: { content: normalizedTitle } }]
-          }
-        })
-      );
-      return newPage.id;
-    } catch (createError) {
-      const suggestions = buildPageSuggestions(nestedPages, normalizedTitle, 12);
-      throw new ControlledError(
-        'NOTION_PAGE_NOT_FOUND_IN_ROOT',
-        `Page "${normalizedTitle}" not found and could not be auto-created: ${createError instanceof Error ? createError.message : 'unknown'}`,
-        {
-          requestedTitle: normalizedTitle,
-          rootPageId: scopedRootId,
-          suggestions
-        }
-      );
-    }
+    const suggestions = buildPageSuggestions(nestedPages, normalizedTitle, 12);
+    throw new ControlledError(
+      'NOTION_PAGE_NOT_FOUND_IN_ROOT',
+      `Page "${normalizedTitle}" not found in configured root page`,
+      {
+        requestedTitle: normalizedTitle,
+        rootPageId: scopedRootId,
+        suggestions
+      }
+    );
   }
 
   if (normalizedPageId) {
-    return normalizedPageId;
+    return {
+      id: normalizedPageId,
+      title: '',
+      requestedTitle: normalizedTitle,
+      strategy: 'direct_page_id'
+    };
   }
 
   if (!normalizedTitle && normalizedRootPageId) {
+    const titleCandidates = recordingNameCandidates(recording);
     const nestedPages = await listNestedPages(client, normalizedRootPageId);
-    const match = choosePageByTitle(nestedPages, recordingNameCandidates(recording));
+    const match = choosePageByTitle(nestedPages, titleCandidates);
     if (match) {
-      return match.id;
+      return {
+        id: match.id,
+        title: match.title,
+        requestedTitle: match.matchedBy || titleCandidates[0] || '',
+        matchedBy: match.matchedBy,
+        strategy: `root_recording_${match.strategy || 'match'}`
+      };
     }
+    const suggestions = buildPageSuggestions(nestedPages, titleCandidates[0] || '', 12);
+    throw new ControlledError(
+      'NOTION_PAGE_NOT_FOUND_IN_ROOT',
+      'Could not resolve target page by recording file name inside root page',
+      {
+        requestedTitle: titleCandidates[0] || '',
+        rootPageId: normalizedRootPageId,
+        suggestions
+      }
+    );
   }
 
   if (!normalizedTitle) {
@@ -343,7 +358,13 @@ async function resolvePageId(client, pageId, title, rootPageId, recording) {
     });
   }
 
-  return exact.id;
+  return {
+    id: exact.id,
+    title: exact.title,
+    requestedTitle: normalizedTitle,
+    matchedBy: normalizedTitle,
+    strategy: 'search_exact'
+  };
 }
 
 /**
@@ -694,6 +715,7 @@ export async function writeMergedToNotion(payload) {
   const { mergedPath, recording, backupsDir, notionConfig, llmMergeFromMarkdown, llmConfig } = payload;
   await fs.mkdir(backupsDir, { recursive: true });
   const notionLogPath = path.join(backupsDir, `${recording.id}.notion.log`);
+  const requestedPageTitle = String(notionConfig?.pageTitle || '').trim();
   const logs = [];
   const log = (message) => {
     logs.push(`[${new Date().toISOString()}] ${message}`);
@@ -708,24 +730,33 @@ export async function writeMergedToNotion(payload) {
       return {
         status: 'skipped',
         warning: 'Notion writeback is disabled (CONSPECTOR_NOTION_MODE=off).',
-        logPath: notionLogPath
+        logPath: notionLogPath,
+        targetPageTitleRequested: requestedPageTitle
       };
     }
 
     if (!notionConfig.token) {
       log('skip: token missing');
-      return { status: 'skipped', warning: 'NOTION_TOKEN is missing. Writeback skipped.', logPath: notionLogPath };
+      return {
+        status: 'skipped',
+        warning: 'NOTION_TOKEN is missing. Writeback skipped.',
+        logPath: notionLogPath,
+        targetPageTitleRequested: requestedPageTitle
+      };
     }
 
     const client = new Client({ auth: notionConfig.token });
-    const pageId = await resolvePageId(
+    const targetPage = await resolvePageTarget(
       client,
       notionConfig.pageId,
       notionConfig.pageTitle,
       notionConfig.rootPageId || '',
       recording
     );
-    log(`target page resolved: ${pageId}`);
+    const pageId = targetPage.id;
+    log(
+      `target page resolved: id=${pageId}; requested="${targetPage.requestedTitle || requestedPageTitle || ''}"; resolved="${targetPage.title || ''}"; strategy=${targetPage.strategy || 'unknown'}`
+    );
 
     const oldBlocks = await listAllChildren(client, pageId);
     const oldMarkdown = notionBlocksToMarkdown(oldBlocks);
@@ -792,6 +823,10 @@ export async function writeMergedToNotion(payload) {
     return {
       status: 'written',
       pageId,
+      targetPageId: pageId,
+      targetPageTitleRequested: targetPage.requestedTitle || requestedPageTitle,
+      targetPageTitleResolved: targetPage.title || '',
+      targetPageLookupStrategy: targetPage.strategy || '',
       backupPath,
       logPath: notionLogPath,
       blocksWritten: blocks.length,

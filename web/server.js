@@ -404,6 +404,8 @@ function listConspectsFromDb() {
           r.id AS recording_id,
           r.source_type,
           r.original_file_name,
+          r.subject_id,
+          s.name AS subject_name,
           r.duration_sec,
           r.created_at,
           j.id AS job_id,
@@ -414,6 +416,7 @@ function listConspectsFromDb() {
           j.error_message,
           j.updated_at
         FROM recordings r
+        LEFT JOIN subjects s ON s.id = r.subject_id
         LEFT JOIN merge_jobs j
           ON j.id = (
             SELECT j2.id
@@ -436,6 +439,8 @@ function listConspectsFromDb() {
       return {
         recordingId,
         fileName: row.original_file_name || recordingId,
+        subjectId: row.subject_id || null,
+        subjectName: row.subject_name || null,
         sourceType: row.source_type || 'unknown',
         durationSec: row.duration_sec || 0,
         createdAt: row.created_at,
@@ -468,6 +473,8 @@ function listConspectsFromHtmlDir() {
       return {
         recordingId,
         fileName: recordingId,
+        subjectId: null,
+        subjectName: null,
         sourceType: 'unknown',
         durationSec: 0,
         createdAt: null,
@@ -922,6 +929,28 @@ app.post('/api/admin/notion-writeback', requireAuth, requireAdmin, async (req, r
   const recordingId = sanitizeRecordingId(req.body?.recordingId);
   const pageTitle = String(req.body?.pageTitle || '').trim();
 
+  if (process.env.CONSPECTOR_NOTION_MODE !== 'real') {
+    res.status(400).json({
+      ok: false,
+      error: {
+        code: 'NOTION_DISABLED',
+        message: 'Notion writeback отключён. Установите CONSPECTOR_NOTION_MODE=real в .env на сервере.'
+      }
+    });
+    return;
+  }
+
+  if (!process.env.NOTION_TOKEN) {
+    res.status(400).json({
+      ok: false,
+      error: {
+        code: 'NOTION_TOKEN_MISSING',
+        message: 'NOTION_TOKEN не настроен в .env на сервере.'
+      }
+    });
+    return;
+  }
+
   if (!pageTitle) {
     res.status(400).json({ ok: false, error: { code: 'NOTION_PAGE_TITLE_REQUIRED', message: 'Page title is required' } });
     return;
@@ -989,6 +1018,21 @@ app.post('/api/admin/notion-writeback', requireAuth, requireAdmin, async (req, r
       llmMergeFromMarkdown,
       llmConfig
     });
+
+    if (result?.status === 'skipped') {
+      res.status(400).json({
+        ok: false,
+        error: {
+          code: 'NOTION_WRITEBACK_SKIPPED',
+          message: result.warning || 'Notion writeback skipped',
+          details: {
+            targetPageTitleRequested: result.targetPageTitleRequested || pageTitle,
+            logPath: result.logPath || ''
+          }
+        }
+      });
+      return;
+    }
 
     res.json({ ok: true, ...result });
   } catch (error) {
