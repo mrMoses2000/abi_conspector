@@ -8,6 +8,22 @@ async function readText(pathname) {
     return fs.readFile(pathname, 'utf8');
 }
 
+function geminiFailureHint(message) {
+    const text = String(message || '');
+    const match = text.match(/gemini exited with code (\d+)/i);
+    const code = match ? Number.parseInt(match[1], 10) : NaN;
+    if (code === 41) {
+        return 'Gemini auth failed (code 41): configure GEMINI_API_KEY for the service user or run Gemini login for that user.';
+    }
+    if (code === 42) {
+        return 'Gemini usage/config failed (code 42): check model name, flags, and CLI version.';
+    }
+    if (code === 52) {
+        return 'Gemini config file error (code 52): verify ~/.gemini settings for the service user.';
+    }
+    return '';
+}
+
 /**
  * @param {{
  *   model?: string;
@@ -85,7 +101,9 @@ async function runGemini(config, outputPath, prompt) {
     } catch (error) {
         writeLog('meta', `failed ${error instanceof Error ? error.message : 'unknown error'}\n`);
         if (error instanceof ControlledError) {
-            throw new ControlledError('GEMINI_EXEC_FAILED', `${error.message}. Лог: ${logPath}`);
+            const hint = geminiFailureHint(error.message);
+            const suffix = hint ? ` Подсказка: ${hint}` : '';
+            throw new ControlledError('GEMINI_EXEC_FAILED', `${error.message}.${suffix} Лог: ${logPath}`);
         }
         throw error;
     } finally {

@@ -45,6 +45,10 @@ const sttFallback = ['whispercpp', 'none'].includes(String(process.env.CONSPECTO
   ? String(process.env.CONSPECTOR_STT_FALLBACK || '').toLowerCase()
   : 'whispercpp';
 const codexMode = process.env.CONSPECTOR_CODEX_MODE === 'mock' ? 'mock' : 'real';
+const llmProvider = ['codex', 'gemini'].includes(String(process.env.CONSPECTOR_LLM_PROVIDER || '').toLowerCase())
+  ? String(process.env.CONSPECTOR_LLM_PROVIDER || '').toLowerCase()
+  : 'codex';
+const geminiMode = process.env.CONSPECTOR_GEMINI_MODE === 'mock' ? 'mock' : 'real';
 const notionMode = process.env.CONSPECTOR_NOTION_MODE === 'real' ? 'real' : 'off';
 const groqApiKey = process.env.CONSPECTOR_GROQ_API_KEY || process.env.GROQ_API_KEY || '';
 const whisperCppBin = process.env.CONSPECTOR_WHISPERCPP_BIN || 'whisper-cli';
@@ -53,6 +57,7 @@ const whisperCppModelPath =
 const strict = process.env.CONSPECTOR_PREFLIGHT_STRICT
   ? !['0', 'false', 'no', 'off'].includes(String(process.env.CONSPECTOR_PREFLIGHT_STRICT).toLowerCase())
   : false;
+const geminiWorkdir = process.env.CONSPECTOR_GEMINI_WORKDIR || process.cwd();
 
 const [major] = process.versions.node.split('.').map(Number);
 if (!Number.isFinite(major) || major < 24) {
@@ -131,6 +136,26 @@ if (codexMode === 'real') {
   }
 } else {
   warn('CONSPECTOR_CODEX_MODE=mock, codex structuring/merge is disabled');
+}
+
+if (llmProvider === 'gemini' && geminiMode === 'real') {
+  ok = checkBinary('gemini', true, ['--version']) && ok;
+  const geminiApiKey = String(process.env.GEMINI_API_KEY || '').trim();
+  const geminiSettingsPath = path.join(process.env.HOME || '', '.gemini', 'settings.json');
+  if (geminiApiKey) {
+    pass('GEMINI_API_KEY is set');
+  } else if (process.env.HOME && fs.existsSync(geminiSettingsPath)) {
+    pass(`Gemini OAuth settings found: ${geminiSettingsPath}`);
+  } else {
+    markIssue('Gemini auth is not configured (set GEMINI_API_KEY or configure ~/.gemini/settings.json for the service user)');
+  }
+
+  const geminiContextPath = path.join(geminiWorkdir, '.gemini', 'GEMINI.md');
+  if (fs.existsSync(geminiContextPath)) {
+    pass(`Gemini context found: ${geminiContextPath}`);
+  } else {
+    warn(`.gemini/GEMINI.md not found in CONSPECTOR_GEMINI_WORKDIR (${geminiWorkdir})`);
+  }
 }
 
 if (notionMode === 'real') {

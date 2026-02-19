@@ -2,6 +2,35 @@ import { spawn } from 'node:child_process';
 import { ControlledError } from './errors.js';
 
 /**
+ * Prefer actionable tail lines and suppress noisy runtime warnings (e.g. Node DEP warnings)
+ * so UI shows the real failure reason instead of warning prelude.
+ * @param {string} stderr
+ * @param {string} stdout
+ */
+export function summarizeProcessFailure(stderr, stdout) {
+  const raw = String(stderr || stdout || '').trim();
+  if (!raw) {
+    return '';
+  }
+
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const noisePatterns = [
+    /^\(node:\d+\)\s+\[DEP\d+\]/i,
+    /^DeprecationWarning:/i
+  ];
+
+  const filtered = lines.filter((line) => !noisePatterns.some((rx) => rx.test(line)));
+  const source = filtered.length > 0 ? filtered : lines;
+  const tail = source.slice(-8).join(' | ');
+
+  return tail.length > 1400 ? `${tail.slice(0, 1400)}...` : tail;
+}
+
+/**
  * @param {{
  *   command: string;
  *   args: string[];
@@ -71,7 +100,7 @@ export async function runCommand(payload) {
       }
 
       if (code !== 0) {
-        const details = (stderr || stdout || '').trim();
+        const details = summarizeProcessFailure(stderr, stdout);
         reject(new ControlledError('PROCESS_FAILED', `${command} exited with code ${code}${details ? `: ${details}` : ''}`));
         return;
       }
