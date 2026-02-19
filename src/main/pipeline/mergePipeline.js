@@ -311,6 +311,11 @@ export function createMergePipeline(deps) {
       }
 
       await stage('notion_writeback', async () => {
+        if (runtimeConfig.notion?.mode !== 'real') {
+          // In web mode we intentionally keep auto-writeback disabled.
+          return;
+        }
+
         try {
           const llmProvider = runtimeConfig.llm?.provider || 'codex';
           const llmConfigKey = getLlmConfigKey(llmProvider);

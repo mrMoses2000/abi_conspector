@@ -7,6 +7,17 @@ const md = new MarkdownIt({
   breaks: true
 });
 
+function sanitizeMermaidNodeQuotes(source) {
+  return String(source || '').replace(/\[[^\]\n]*\]|\{[^\}\n]*\}/g, (token) => token.replace(/"/g, "'"));
+}
+
+function sanitizeMermaidFences(markdown) {
+  return String(markdown || '').replace(/```mermaid\s*([\s\S]*?)```/gi, (_match, code) => {
+    const cleaned = sanitizeMermaidNodeQuotes(code).trimEnd();
+    return `\`\`\`mermaid\n${cleaned}\n\`\`\``;
+  });
+}
+
 /**
  * Transform GitHub-style alerts: > [!NOTE], > [!IMPORTANT], > [!WARNING], > [!TIP], > [!CAUTION]
  * in the rendered HTML into styled callout divs.
@@ -74,6 +85,7 @@ function generateToc(html) {
  */
 export async function renderHtmlFromMarkdown(payload) {
   let mergedMd = await fs.readFile(payload.mergedPath, 'utf8');
+  mergedMd = sanitizeMermaidFences(mergedMd);
   let rendered = md.render(mergedMd);
 
   rendered = transformCallouts(rendered);
