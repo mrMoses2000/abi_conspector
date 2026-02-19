@@ -16,6 +16,7 @@ import { MergeQueue } from '../src/main/pipeline/mergeQueue.js';
 import { createMergePipeline } from '../src/main/pipeline/mergePipeline.js';
 import { ingestManagedAudio } from '../src/main/audio/ingestAudio.js';
 import { ensureDirs } from '../src/main/utils/fs.js';
+import { renderHtmlFromMarkdown } from '../src/main/workers/htmlWorker.js';
 
 const app = express();
 const PORT = Number.parseInt(process.env.CONSPECTOR_WEB_PORT || '8787', 10);
@@ -317,6 +318,70 @@ const mergeQueue = new MergeQueue({
   worker: (jobId, notify) => pipeline.processJob(jobId, notify)
 });
 
+function dedupeRecordingsById(rows) {
+  const byId = new Map();
+  for (const row of rows || []) {
+    const id = String(row?.id || '').trim();
+    if (!id) continue;
+    const prev = byId.get(id);
+    if (!prev) {
+      byId.set(id, row);
+      continue;
+    }
+    const prevTs = Date.parse(prev.created_at || 0);
+    const rowTs = Date.parse(row.created_at || 0);
+    if (Number.isFinite(rowTs) && (!Number.isFinite(prevTs) || rowTs > prevTs)) {
+      byId.set(id, row);
+    }
+  }
+  return Array.from(byId.values());
+}
+
+async function ensureSubjectArtifacts(subject) {
+  const subjectDir = path.resolve(managedPaths.subjects, subject.id);
+  const mdPath = path.join(subjectDir, 'merged.md');
+  const htmlPath = path.join(subjectDir, 'conspect.html');
+
+  if (fs.existsSync(mdPath) && fs.existsSync(htmlPath)) {
+    return { mdPath, htmlPath };
+  }
+
+  // Backfill from latest ready recording for this subject.
+  const candidates = dedupeRecordingsById(appDb.listRecordingsBySubject(subject.id))
+    .sort((a, b) => Date.parse(b.created_at || 0) - Date.parse(a.created_at || 0));
+
+  for (const row of candidates) {
+    const recordingId = String(row.id || '').trim();
+    if (!recordingId) continue;
+    const recMdPath = path.join(managedPaths.merged, `${recordingId}.md`);
+    const recHtmlPath = path.join(managedPaths.html, `${recordingId}.html`);
+    const hasRecMd = fs.existsSync(recMdPath);
+    const hasRecHtml = fs.existsSync(recHtmlPath);
+    if (!hasRecMd && !hasRecHtml) {
+      continue;
+    }
+    await fsp.mkdir(subjectDir, { recursive: true });
+    if (!fs.existsSync(mdPath) && hasRecMd) {
+      await fsp.copyFile(recMdPath, mdPath);
+    }
+    if (!fs.existsSync(htmlPath) && hasRecHtml) {
+      await fsp.copyFile(recHtmlPath, htmlPath);
+    }
+    break;
+  }
+
+  // If markdown exists but html does not, render html now.
+  if (!fs.existsSync(htmlPath) && fs.existsSync(mdPath)) {
+    await renderHtmlFromMarkdown({
+      mergedPath: mdPath,
+      htmlPath,
+      title: subject.name
+    });
+  }
+
+  return { mdPath, htmlPath };
+}
+
 // Log pipeline events
 mergeQueue.on('job:started', ({ jobId }) => {
   process.stdout.write(`[pipeline] job started: ${jobId}\n`);
@@ -548,14 +613,13 @@ app.get('/api/subjects/:subjectId', requireAuth, (req, res) => {
   res.json({ ok: true, subject, recordings });
 });
 
-app.get('/api/subjects/:subjectId/html', requireAuth, (req, res) => {
+app.get('/api/subjects/:subjectId/html', requireAuth, async (req, res) => {
   try {
     const subject = appDb.getSubject(req.params.subjectId);
     if (!subject) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Subject not found' } });
     }
-    const subjectDir = path.resolve(managedPaths.subjects, subject.id);
-    const htmlPath = path.join(subjectDir, 'conspect.html');
+    const { htmlPath } = await ensureSubjectArtifacts(subject);
     if (!fs.existsSync(htmlPath)) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'HTML conspect not yet generated for this subject' } });
     }
@@ -569,14 +633,13 @@ app.get('/api/subjects/:subjectId/html', requireAuth, (req, res) => {
   }
 });
 
-app.get('/api/subjects/:subjectId/md', requireAuth, (req, res) => {
+app.get('/api/subjects/:subjectId/md', requireAuth, async (req, res) => {
   try {
     const subject = appDb.getSubject(req.params.subjectId);
     if (!subject) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Subject not found' } });
     }
-    const subjectDir = path.resolve(managedPaths.subjects, subject.id);
-    const mdPath = path.join(subjectDir, 'merged.md');
+    const { mdPath } = await ensureSubjectArtifacts(subject);
     if (!fs.existsSync(mdPath)) {
       return res.status(404).json({ ok: false, error: { code: 'NOT_FOUND', message: 'Merged MD not yet generated for this subject' } });
     }
