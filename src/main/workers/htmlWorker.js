@@ -8,10 +8,30 @@ const md = new MarkdownIt({
 });
 
 function sanitizeMermaidNodeQuotes(source) {
-  return String(source || '').replace(/\[[^\]\n]*\]|\{[^\}\n]*\}/g, (token) => token.replace(/"/g, "'"));
+  const normalizeLabel = (rawLabel) => {
+    const label = String(rawLabel ?? '').trim();
+    const unwrapped = (
+      (label.startsWith('"') && label.endsWith('"')) ||
+      (label.startsWith("'") && label.endsWith("'"))
+    )
+      ? label.slice(1, -1)
+      : label;
+    const normalized = unwrapped
+      .replace(/\\"/g, "'")
+      .replace(/"/g, "'")
+      .replace(/\r?\n/g, ' ')
+      .trim();
+    return `"${normalized}"`;
+  };
+
+  // Force explicit quoted labels for [] and {} node forms to avoid Mermaid parse errors
+  // on punctuation, parentheses, Cyrillic text, and mixed quotes.
+  return String(source || '')
+    .replace(/([A-Za-z0-9_-]+)\[([^\]\n]*)\]/g, (_match, nodeId, rawLabel) => `${nodeId}[${normalizeLabel(rawLabel)}]`)
+    .replace(/([A-Za-z0-9_-]+)\{([^\}\n]*)\}/g, (_match, nodeId, rawLabel) => `${nodeId}{${normalizeLabel(rawLabel)}}`);
 }
 
-function sanitizeMermaidFences(markdown) {
+export function sanitizeMermaidFences(markdown) {
   return String(markdown || '').replace(/```mermaid\s*([\s\S]*?)```/gi, (_match, code) => {
     const cleaned = sanitizeMermaidNodeQuotes(code).trimEnd();
     return `\`\`\`mermaid\n${cleaned}\n\`\`\``;
