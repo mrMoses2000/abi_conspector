@@ -9,6 +9,7 @@ test('database stores imported_file recordings with new schema fields', async ()
   const tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'abi-db-test-'));
   const dbPath = path.join(tmpRoot, 'app.db');
   const db = new AppDatabase(dbPath);
+  const subject = db.createSubject('Тестовый предмет');
 
   const recordingId = db.createRecording({
     sourceType: 'imported_file',
@@ -17,6 +18,7 @@ test('database stores imported_file recordings with new schema fields', async ()
     managedAudioPath: '/managed/imports/file.mp3',
     normalizedAudioPath: null,
     audioSha256: 'abc123',
+    subjectId: subject.id,
     durationSec: 120
   });
 
@@ -32,6 +34,7 @@ test('database stores imported_file recordings with new schema fields', async ()
   assert.equal(recording.original_file_name, 'lecture.mp3');
   assert.equal(recording.normalized_audio_path, null);
   assert.equal(recording.audio_sha256, 'abc123');
+  assert.equal(recording.subject_id, subject.id);
 
   db.updateRecordingNormalization(recordingId, '/managed/audio/file.flac');
   const updated = db.getRecording(recordingId);

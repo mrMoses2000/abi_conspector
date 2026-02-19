@@ -10,6 +10,7 @@ import { hashFileSha256 } from '../utils/fs.js';
  *   sourceType: 'microphone' | 'imported_file';
  *   originalFileName?: string | null;
  *   originalFilePath?: string | null;
+ *   subjectId?: string | null;
  *   db: import('../db/database.js').AppDatabase;
  *   maxLectureSeconds: number;
  *   queue: { enqueue: (jobId: string) => void };
@@ -22,6 +23,7 @@ export async function ingestManagedAudio(payload) {
     sourceType,
     originalFileName = null,
     originalFilePath = null,
+    subjectId = null,
     db,
     maxLectureSeconds,
     queue,
@@ -63,6 +65,7 @@ export async function ingestManagedAudio(payload) {
     managedAudioPath,
     normalizedAudioPath: null,
     audioSha256,
+    subjectId,
     durationSec: probe.durationSec
   });
 
@@ -89,4 +92,3 @@ export async function ingestManagedAudio(payload) {
     warning
   };
 }
-

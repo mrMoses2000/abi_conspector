@@ -28,10 +28,11 @@ export class AppDatabase {
         managed_audio_path,
         normalized_audio_path,
         audio_sha256,
+        subject_id,
         duration_sec,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     this.updateRecordingNormalizationStmt = this.db.prepare(`
@@ -97,6 +98,7 @@ export class AppDatabase {
         managed_audio_path,
         normalized_audio_path,
         audio_sha256,
+        subject_id,
         duration_sec,
         created_at,
         updated_at
@@ -301,6 +303,7 @@ export class AppDatabase {
    *   managedAudioPath: string;
    *   normalizedAudioPath: string | null;
    *   audioSha256: string;
+   *   subjectId?: string | null;
    *   durationSec: number;
    * }} payload
    */
@@ -315,6 +318,7 @@ export class AppDatabase {
       payload.managedAudioPath,
       payload.normalizedAudioPath,
       payload.audioSha256,
+      payload.subjectId ?? null,
       payload.durationSec,
       now,
       now

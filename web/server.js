@@ -669,22 +669,24 @@ app.post('/api/upload', requireAuth, upload.single('audio'), async (req, res) =>
     const managedAudioPath = path.join(managedPaths.imports, managedName);
     await fsp.rename(req.file.path, managedAudioPath);
 
+    // Prefer binding subject before job starts, so subject-level merge/html can run in the same pipeline pass.
+    const subjectIdRaw = String(req.body?.subjectId || '').trim();
+    const subjectId = subjectIdRaw || null;
+    if (subjectId && !appDb.getSubject(subjectId)) {
+      throw new ControlledError('SUBJECT_NOT_FOUND', 'Selected subject was not found');
+    }
+
     const result = await ingestManagedAudio({
       managedAudioPath,
       sourceType: 'imported_file',
       originalFileName: originalName,
       originalFilePath: null,
+      subjectId,
       db: appDb,
       maxLectureSeconds: MAX_LECTURE_SECONDS,
       queue: mergeQueue,
       cleanupOnError: true
     });
-
-    // Link recording to subject if provided
-    const subjectId = String(req.body?.subjectId || '').trim();
-    if (subjectId && result.recordingId) {
-      appDb.updateRecordingSubject(result.recordingId, subjectId);
-    }
 
     res.json({
       ok: true,
