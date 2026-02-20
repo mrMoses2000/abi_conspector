@@ -35,7 +35,7 @@ test('markdownToNotionBlocks converts common markdown structures', () => {
   assert.ok(types.includes('numbered_list_item'));
   assert.ok(types.includes('quote'));
   assert.ok(types.includes('paragraph'));
-  assert.ok(types.includes('code'));
+  assert.ok(types.includes('callout'), 'mermaid block should become a callout');
 });
 
 test('choosePageByTitle resolves exact normalized title', () => {

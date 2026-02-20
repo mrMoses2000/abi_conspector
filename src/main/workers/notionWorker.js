@@ -580,6 +580,18 @@ export function markdownToNotionBlocks(md) {
     if (!text) {
       return;
     }
+    // Mermaid blocks: Notion can't render them, show a callout instead
+    if (codeLang.toLowerCase() === 'mermaid') {
+      blocks.push({
+        object: 'block',
+        type: 'callout',
+        callout: {
+          icon: { type: 'emoji', emoji: '📊' },
+          rich_text: [{ type: 'text', text: { content: 'Схема (доступна в HTML-версии конспекта)' } }]
+        }
+      });
+      return;
+    }
     blocks.push({
       object: 'block',
       type: 'code',
