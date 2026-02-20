@@ -171,16 +171,13 @@ export async function runSttDiarization(payload) {
 
   try {
     let finalTranscript = null;
-    let fallbackWarnings = [];
 
     await executeSttFallback(
       chain,
       async (engine) => {
         // Runner: try one engine
         if (!isEngineConfigured(engine, sttConfig)) {
-          const skipMsg = `skipping ${engine}: not configured (no API key)`;
-          writeLog('meta', `${skipMsg}\n`);
-          fallbackWarnings.push(skipMsg);
+          writeLog('meta', `skipping ${engine}: not configured (no API key)\n`);
           throw new Error('Not configured'); // trigger fallback
         }
 
@@ -192,18 +189,16 @@ export async function runSttDiarization(payload) {
           throw new ControlledError('STT_EMPTY_RESULT', `${engine} returned empty segments`);
         }
 
-        if (fallbackWarnings.length > 0) {
-          transcript.warning = fallbackWarnings.join('; ');
-        }
+        // No warning on successful fallback — it's normal operation.
+        // Details are in the .stt.log file if needed.
 
         finalTranscript = transcript;
       },
       async (engine, error) => {
-        // onFallback: log and cleanup
+        // onFallback: log and cleanup (no UI warning — only log file)
         const errorText = error.message;
         if (errorText !== 'Not configured') {
           writeLog('meta', `engine=${engine} failed: ${errorText}\n`);
-          fallbackWarnings.push(`stt ${engine} failed, trying next: ${errorText}`);
           // CRITICAL: Clean up partial transcript file before trying next engine
           await cleanupPartialTranscript(transcriptPath, writeLog);
         }
