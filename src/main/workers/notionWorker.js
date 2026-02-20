@@ -604,16 +604,19 @@ function parseMermaidMindmap(text) {
   }
 
   // Build blocks recursively: find children of each node
-  function buildTree(parentIdx, parentLevel) {
+  // Notion API allows max 2 levels of children nesting
+  function buildTree(parentIdx, parentLevel, depth) {
     const children = [];
     let i = parentIdx + 1;
     while (i < nodes.length) {
       if (nodes[i].level <= parentLevel) break; // sibling or parent level
       if (nodes[i].level === parentLevel + 1) {
         const block = makeBlock(nodes[i]);
-        const subChildren = buildTree(i, nodes[i].level);
-        if (subChildren.length > 0) {
-          block.bulleted_list_item.children = subChildren;
+        if (depth < 2) {
+          const subChildren = buildTree(i, nodes[i].level, depth + 1);
+          if (subChildren.length > 0) {
+            block.bulleted_list_item.children = subChildren;
+          }
         }
         children.push(block);
         // Skip past all descendants
@@ -631,9 +634,9 @@ function parseMermaidMindmap(text) {
     return i;
   }
 
-  // Top-level: root node with its children
+  // Top-level: root node with its children (depth=0 → allows 2 sub-levels)
   const rootBlock = makeBlock(nodes[0]);
-  const rootChildren = buildTree(0, nodes[0].level);
+  const rootChildren = buildTree(0, nodes[0].level, 0);
   if (rootChildren.length > 0) {
     rootBlock.bulleted_list_item.children = rootChildren;
   }
