@@ -251,3 +251,25 @@ export async function runCodexUpdateContext(payload) {
 
   await runCodex(codexConfig, outputPath, prompt);
 }
+
+/**
+ * Review merged conspect for critical issues via Codex.
+ * @param {{
+ *   mergedMarkdown: string;
+ *   outputPath: string;
+ *   codexConfig: object;
+ * }} payload
+ */
+export async function runCodexReview(payload) {
+  const { mergedMarkdown, outputPath, codexConfig } = payload;
+  const skillPath = getCodexSkillPath(codexConfig.workdir, 'conspector-review');
+
+  const MAX_REVIEW_CHARS = 60000;
+  const reviewText = mergedMarkdown.length > MAX_REVIEW_CHARS
+    ? mergedMarkdown.slice(-MAX_REVIEW_CHARS)
+    : mergedMarkdown;
+
+  const prompt = `$conspector-review\nPath: ${skillPath}\n\nMerged conspect:\n\n\`\`\`md\n${reviewText}\n\`\`\`\n\nПроверь конспект и верни JSON с критическими проблемами.`;
+
+  await runCodex(codexConfig, outputPath, prompt);
+}

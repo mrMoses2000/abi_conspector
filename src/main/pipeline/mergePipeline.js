@@ -3,7 +3,7 @@ import path from 'node:path';
 import { normalizeToFlac } from '../audio/ffmpeg.js';
 import { ControlledError } from '../utils/errors.js';
 import { runSttDiarization } from '../workers/sttWorker.js';
-import { getStructureWorker, getMergeWorker, getMergeFromMarkdownWorker, getContextWorker, getLlmConfigKey, buildLlmFallbackChain } from '../workers/llmProvider.js';
+import { getStructureWorker, getMergeWorker, getMergeFromMarkdownWorker, getContextWorker, getReviewWorker, getLlmConfigKey, buildLlmFallbackChain } from '../workers/llmProvider.js';
 import { renderEmergencyHtml, renderHtmlFromMarkdown } from '../workers/htmlWorker.js';
 import { writeMergedToNotion } from '../workers/notionWorker.js';
 import { executeWithLlmFallback } from '../utils/fallback.js';
@@ -311,11 +311,11 @@ export function createMergePipeline(deps) {
             // Ask LLM to review
             try {
               await executeWithLlmFallback(llmChain, runtimeConfig, appendWarning, 'review_quality', async (provider, llmConfig) => {
-                const { runGeminiReview } = await import('../workers/geminiWorker.js');
-                await runGeminiReview({
+                const runReview = getReviewWorker(provider);
+                await runReview({
                   mergedMarkdown: mergedContent,
                   outputPath: reviewOutputPath,
-                  geminiConfig: llmConfig
+                  llmConfig
                 });
               });
             } catch (reviewError) {
@@ -403,7 +403,9 @@ export function createMergePipeline(deps) {
           }
 
           const result = await writeMergedToNotion({
-            mergedPath,
+            mergedPath: recording.subject_id
+              ? path.join(managedPaths.subjects, recording.subject_id, 'merged.md')
+              : mergedPath,
             recording,
             backupsDir: managedPaths.backups,
             notionConfig,

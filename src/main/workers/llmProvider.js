@@ -1,5 +1,5 @@
-import { runCodexStructure, runCodexMerge, runCodexMergeFromMarkdown, runCodexUpdateContext } from './codexWorker.js';
-import { runGeminiStructure, runGeminiMerge, runGeminiMergeFromMarkdown, runGeminiUpdateContext } from './geminiWorker.js';
+import { runCodexStructure, runCodexMerge, runCodexMergeFromMarkdown, runCodexUpdateContext, runCodexReview } from './codexWorker.js';
+import { runGeminiStructure, runGeminiMerge, runGeminiMergeFromMarkdown, runGeminiUpdateContext, runGeminiReview } from './geminiWorker.js';
 
 /**
  * Returns the correct LLM config key name based on provider.
@@ -94,6 +94,25 @@ export function getContextWorker(provider) {
         pageMarkdown: payload.pageMarkdown,
         existingContext: payload.existingContext,
         pageNumber: payload.pageNumber,
+        outputPath: payload.outputPath,
+        codexConfig: payload.llmConfig
+    });
+}
+
+/**
+ * Returns the review worker function for the given provider.
+ * @param {'codex' | 'gemini'} provider
+ */
+export function getReviewWorker(provider) {
+    if (provider === 'gemini') {
+        return (payload) => runGeminiReview({
+            mergedMarkdown: payload.mergedMarkdown,
+            outputPath: payload.outputPath,
+            geminiConfig: payload.llmConfig
+        });
+    }
+    return (payload) => runCodexReview({
+        mergedMarkdown: payload.mergedMarkdown,
         outputPath: payload.outputPath,
         codexConfig: payload.llmConfig
     });
