@@ -15,58 +15,96 @@
 
 <body>
   <main class="layout">
-    <!-- Welcome / About page -->
-    <section id="welcome-card" class="card welcome-card">
-      <div class="welcome-hero">
-        <h1 class="welcome-title">📝 ABI Conspector</h1>
-        <p class="welcome-tagline">Автоматическая система создания конспектов из аудиозаписей лекций</p>
-      </div>
+    <!-- Welcome / Landing page -->
+    <section id="welcome-card" class="welcome-landing">
+      <!-- Animated background orbs -->
+      <div class="orb orb-1"></div>
+      <div class="orb orb-2"></div>
+      <div class="orb orb-3"></div>
 
-      <div class="welcome-features">
-        <div class="feature-card">
-          <div class="feature-icon"><i data-lucide="mic"></i></div>
-          <h3>Транскрипция</h3>
-          <p>Загрузите аудиозапись лекции — система автоматически распознает речь с помощью Groq и AssemblyAI</p>
+      <div class="landing-content">
+        <!-- Hero -->
+        <div class="landing-hero">
+          <div class="landing-badge">AI-powered · Open Source</div>
+          <h1 class="landing-title">ABI Conspector</h1>
+          <p class="landing-subtitle">Автоматическая система создания конспектов из аудиозаписей лекций</p>
         </div>
-        <div class="feature-card">
-          <div class="feature-icon"><i data-lucide="brain"></i></div>
-          <h3>AI-обработка</h3>
-          <p>Google Gemini структурирует текст в полноценный конспект с тезисами, терминами и mind-map</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon"><i data-lucide="notebook-pen"></i></div>
-          <h3>Notion</h3>
-          <p>Готовый конспект автоматически публикуется в Notion с правильным форматированием</p>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon"><i data-lucide="library"></i></div>
-          <h3>Библиотека</h3>
-          <p>Все конспекты по предметам собраны в красивой HTML-библиотеке с навигацией</p>
-        </div>
-      </div>
 
-      <div class="welcome-team">
-        <h2>Разработчики</h2>
-        <div class="team-members">
-          <div class="team-card">
-            <div class="team-avatar">МВ</div>
-            <div class="team-info">
-              <strong>Василенко Моисей</strong>
-              <span>Архитектура, backend, AI pipeline</span>
-            </div>
+        <!-- Pipeline visualization -->
+        <div class="pipeline">
+          <div class="pipeline-step">
+            <div class="pipeline-icon"><i data-lucide="upload"></i></div>
+            <span>Загрузка аудио</span>
           </div>
-          <div class="team-card">
-            <div class="team-avatar">ШТ</div>
-            <div class="team-info">
-              <strong>Турсуметов Шерзатбек</strong>
-              <span>Тестирование, доработка</span>
-            </div>
+          <div class="pipeline-arrow"><i data-lucide="chevron-right"></i></div>
+          <div class="pipeline-step">
+            <div class="pipeline-icon"><i data-lucide="mic"></i></div>
+            <span>Транскрипция</span>
+          </div>
+          <div class="pipeline-arrow"><i data-lucide="chevron-right"></i></div>
+          <div class="pipeline-step">
+            <div class="pipeline-icon"><i data-lucide="brain"></i></div>
+            <span>AI обработка</span>
+          </div>
+          <div class="pipeline-arrow"><i data-lucide="chevron-right"></i></div>
+          <div class="pipeline-step">
+            <div class="pipeline-icon"><i data-lucide="book-open"></i></div>
+            <span>Конспект</span>
           </div>
         </div>
-        <p class="team-group">Христианское Руководство · 13 набор</p>
-      </div>
 
-      <button id="welcome-start-btn" class="btn primary welcome-start-btn" type="button">Войти в систему →</button>
+        <!-- Feature cards -->
+        <div class="landing-features">
+          <div class="l-feature-card">
+            <div class="l-feature-icon"><i data-lucide="audio-waveform"></i></div>
+            <h3>Groq & AssemblyAI</h3>
+            <p>Быстрая транскрипция через Whisper с автоматическим fallback между провайдерами</p>
+          </div>
+          <div class="l-feature-card">
+            <div class="l-feature-icon"><i data-lucide="sparkles"></i></div>
+            <h3>Google Gemini</h3>
+            <p>Структурирование текста в готовый конспект с терминами, тезисами и mind-map диаграммами</p>
+          </div>
+          <div class="l-feature-card">
+            <div class="l-feature-icon"><i data-lucide="notebook-pen"></i></div>
+            <h3>Notion Integration</h3>
+            <p>Автоматическая публикация в Notion с сохранением форматирования, callout-блоков и таблиц</p>
+          </div>
+          <div class="l-feature-card">
+            <div class="l-feature-icon"><i data-lucide="layout-dashboard"></i></div>
+            <h3>HTML Библиотека</h3>
+            <p>Красивый просмотр конспектов с тремя темами, оглавлением и подсветкой кода</p>
+          </div>
+        </div>
+
+        <!-- Team -->
+        <div class="landing-team">
+          <h2>Разработчики</h2>
+          <div class="landing-team-grid">
+            <div class="landing-team-card">
+              <div class="landing-avatar">МВ</div>
+              <div class="landing-team-info">
+                <strong>Василенко Моисей</strong>
+                <span>Архитектура · Backend · AI Pipeline</span>
+              </div>
+            </div>
+            <div class="landing-team-card">
+              <div class="landing-avatar">ШТ</div>
+              <div class="landing-team-info">
+                <strong>Турсуметов Шерзатбек</strong>
+                <span>Тестирование · Доработка</span>
+              </div>
+            </div>
+          </div>
+          <p class="landing-group">Христианское Руководство · 13 набор</p>
+        </div>
+
+        <!-- CTA -->
+        <button id="welcome-start-btn" class="landing-cta" type="button">
+          <i data-lucide="log-in" style="width:20px;height:20px"></i>
+          Войти в систему
+        </button>
+      </div>
     </section>
 
     <section id="auth-card" class="card hidden">

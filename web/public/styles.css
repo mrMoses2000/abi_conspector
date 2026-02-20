@@ -239,6 +239,12 @@ input:focus {
   background: var(--danger-bg);
 }
 
+.btn svg,
+.btn i {
+  vertical-align: middle;
+  display: inline;
+}
+
 .btn.accent {
   background: var(--accent-gradient);
   color: #fff;
@@ -723,170 +729,379 @@ tbody tr:nth-child(even):hover {
   position: relative;
 }
 
-/* ─── Welcome Page ─── */
-.welcome-card {
-  max-width: 700px;
+/* ═══════════════════════════════════════════ */
+/* ─── Welcome Landing Page ─── */
+/* ═══════════════════════════════════════════ */
+
+.welcome-landing {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 40px 20px;
+}
+
+/* ── Animated background orbs ── */
+.orb {
+  position: fixed;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.orb-1 {
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.35), transparent 70%);
+  top: -10%;
+  left: -5%;
+  animation: orbFloat 12s ease-in-out infinite;
+}
+
+.orb-2 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.25), transparent 70%);
+  bottom: -5%;
+  right: -5%;
+  animation: orbFloat 16s ease-in-out infinite reverse;
+}
+
+.orb-3 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.2), transparent 70%);
+  top: 40%;
+  left: 60%;
+  animation: orbFloat 20s ease-in-out infinite 2s;
+}
+
+@keyframes orbFloat {
+
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+  }
+
+  33% {
+    transform: translate(30px, -40px) scale(1.05);
+  }
+
+  66% {
+    transform: translate(-20px, 20px) scale(0.95);
+  }
+}
+
+/* ── Landing content ── */
+.landing-content {
+  max-width: 780px;
+  width: 100%;
   text-align: center;
+  animation: fadeInUp 0.8s ease-out both;
 }
 
-.welcome-hero {
-  margin-bottom: 32px;
+/* ── Hero ── */
+.landing-hero {
+  margin-bottom: 40px;
 }
 
-.welcome-title {
-  font-size: 42px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #e0e7ff 0%, #818cf8 50%, #6366f1 100%);
+.landing-badge {
+  display: inline-block;
+  padding: 6px 18px;
+  border-radius: 20px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+  animation: fadeInUp 0.6s ease-out 0.1s both;
+}
+
+.landing-title {
+  font-size: clamp(40px, 8vw, 64px);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, #e0e7ff 0%, #818cf8 40%, #6366f1 60%, #3b82f6 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
-  margin-bottom: 12px;
-  line-height: 1.2;
+  line-height: 1.1;
+  margin-bottom: 16px;
+  animation: fadeInUp 0.7s ease-out 0.2s both;
 }
 
-.welcome-tagline {
-  font-size: 17px;
+.landing-subtitle {
+  font-size: 18px;
   color: var(--text-secondary);
   line-height: 1.6;
-  max-width: 480px;
+  max-width: 520px;
   margin: 0 auto;
+  animation: fadeInUp 0.7s ease-out 0.3s both;
 }
 
-.welcome-features {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-bottom: 32px;
+/* ── Pipeline ── */
+.pipeline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 40px;
+  flex-wrap: wrap;
+  animation: fadeInUp 0.7s ease-out 0.4s both;
 }
 
-.feature-card {
-  background: var(--bg-subtle);
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius);
-  padding: 20px 16px;
-  text-align: left;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+.pipeline-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(99, 102, 241, 0.12);
+  transition: all 0.25s ease;
+  min-width: 100px;
 }
 
-.feature-card:hover {
+.pipeline-step:hover {
+  background: rgba(99, 102, 241, 0.12);
   transform: translateY(-3px);
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.12);
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.15);
 }
 
-.feature-icon {
-  font-size: 28px;
-  margin-bottom: 8px;
+.pipeline-icon {
   color: var(--accent);
 }
 
-.feature-icon svg {
-  width: 32px;
-  height: 32px;
-  stroke-width: 1.5;
+.pipeline-icon svg {
+  width: 24px;
+  height: 24px;
 }
 
-.btn svg,
-.btn i {
-  vertical-align: middle;
-  display: inline;
-}
-
-.feature-card h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 6px;
-}
-
-.feature-card p {
-  font-size: 13px;
+.pipeline-step span {
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-secondary);
-  line-height: 1.5;
 }
 
-.welcome-team {
-  margin-bottom: 28px;
+.pipeline-arrow {
+  color: rgba(99, 102, 241, 0.4);
 }
 
-.welcome-team h2 {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-bottom: 16px;
+.pipeline-arrow svg {
+  width: 20px;
+  height: 20px;
 }
 
-.team-members {
-  display: flex;
+/* ── Feature cards ── */
+.landing-features {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
-  justify-content: center;
+  margin-bottom: 40px;
+  animation: fadeInUp 0.7s ease-out 0.5s both;
+}
+
+.l-feature-card {
+  background: rgba(22, 27, 34, 0.6);
+  border: 1px solid rgba(99, 102, 241, 0.1);
+  border-radius: var(--radius);
+  padding: 24px 20px;
+  text-align: left;
+  backdrop-filter: blur(12px);
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.l-feature-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.l-feature-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(99, 102, 241, 0.25);
+  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.12);
+}
+
+.l-feature-card:hover::before {
+  opacity: 1;
+}
+
+.l-feature-icon {
+  color: var(--accent);
   margin-bottom: 12px;
 }
 
-.team-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--bg-subtle);
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius);
-  padding: 14px 18px;
-  text-align: left;
+.l-feature-icon svg {
+  width: 28px;
+  height: 28px;
+  stroke-width: 1.5;
 }
 
-.team-avatar {
-  width: 42px;
-  height: 42px;
+.l-feature-card h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.l-feature-card p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+/* ── Team ── */
+.landing-team {
+  margin-bottom: 36px;
+  animation: fadeInUp 0.7s ease-out 0.6s both;
+}
+
+.landing-team h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 18px;
+  -webkit-text-fill-color: unset;
+  background: none;
+}
+
+.landing-team-grid {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.landing-team-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgba(22, 27, 34, 0.5);
+  border: 1px solid rgba(99, 102, 241, 0.1);
+  border-radius: var(--radius);
+  padding: 16px 22px;
+  backdrop-filter: blur(8px);
+  transition: all 0.25s;
+}
+
+.landing-team-card:hover {
+  border-color: rgba(99, 102, 241, 0.2);
+  transform: translateY(-2px);
+}
+
+.landing-avatar {
+  width: 48px;
+  height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #818cf8);
+  background: linear-gradient(135deg, #6366f1 0%, #818cf8 50%, #3b82f6 100%);
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 14px;
+  font-size: 15px;
   flex-shrink: 0;
+  box-shadow: 0 4px 16px rgba(99, 102, 241, 0.3);
 }
 
-.team-info {
+.landing-team-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
+  text-align: left;
 }
 
-.team-info strong {
+.landing-team-info strong {
   font-size: 14px;
-  color: var(--text-primary);
+  color: var(--text);
 }
 
-.team-info span {
+.landing-team-info span {
   font-size: 12px;
   color: var(--text-secondary);
 }
 
-.team-group {
-  font-size: 14px;
+.landing-group {
+  font-size: 15px;
   color: var(--accent);
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
-.welcome-start-btn {
+/* ── CTA Button ── */
+.landing-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 44px;
   font-size: 16px;
-  padding: 14px 40px;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(135deg, #6366f1, #3b82f6);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 24px rgba(99, 102, 241, 0.35);
+  animation: fadeInUp 0.7s ease-out 0.7s both;
 }
 
+.landing-cta:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 8px 36px rgba(99, 102, 241, 0.5);
+}
+
+.landing-cta:active {
+  transform: translateY(-1px) scale(0.98);
+}
+
+/* ─── Welcome responsive ─── */
 @media (max-width: 600px) {
-  .welcome-features {
+  .landing-features {
     grid-template-columns: 1fr;
   }
 
-  .team-members {
+  .pipeline {
+    gap: 4px;
+  }
+
+  .pipeline-step {
+    padding: 10px 12px;
+    min-width: 70px;
+  }
+
+  .pipeline-step span {
+    font-size: 10px;
+  }
+
+  .landing-team-grid {
     flex-direction: column;
     align-items: center;
   }
 
-  .welcome-title {
-    font-size: 30px;
+  .landing-title {
+    font-size: 36px;
   }
 }
 
