@@ -15,7 +15,7 @@
     "smoke:import": "node -r dotenv/config scripts/smoke-import.js",
     "start:ready": "CONSPECTOR_STT_MODE=mock CONSPECTOR_CODEX_MODE=mock npm run preflight && npm run smoke:import && npm start",
     "start:real": "npm run preflight && npm start",
-    "test": "node --test"
+    "test": "node --test test/**/*.test.js tests/**/*.test.js"
   },
   "engines": {
     "node": ">=24.0.0"
