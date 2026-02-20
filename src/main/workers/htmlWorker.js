@@ -122,6 +122,8 @@ export async function renderHtmlFromMarkdown(payload) {
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/styles/github-dark.min.css" id="hljs-theme" />
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11/build/highlight.min.js"></script>
   <style>
     /* ─── Dark Theme (default) ─── */
     :root {
@@ -490,11 +492,53 @@ export async function renderHtmlFromMarkdown(payload) {
       article blockquote { background: #f8fafc; color: #475569; }
     }
 
-    /* ─── Responsive ─── */
+    /* ─── Reading progress bar ─── */
+    .progress-bar {
+      position: fixed; top: 0; left: 0; height: 3px; z-index: 100;
+      background: var(--accent-light);
+      transition: width 0.1s linear;
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    /* ─── Back to top ─── */
+    .back-top {
+      position: fixed; bottom: 32px; right: 32px; z-index: 50;
+      width: 42px; height: 42px; border-radius: 50%;
+      background: var(--accent); color: #fff; border: none;
+      font-size: 20px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; transform: translateY(12px);
+      transition: opacity 0.3s, transform 0.3s;
+      pointer-events: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    }
+    .back-top.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+    .back-top:hover { background: var(--accent-light); }
+
+    /* ─── Collapsible TOC ─── */
+    .toc-header {
+      display: flex; justify-content: space-between; align-items: center; cursor: pointer;
+    }
+    .toc-toggle {
+      background: none; border: none; color: var(--text-secondary); cursor: pointer;
+      font-size: 18px; padding: 0 4px; transition: transform 0.2s;
+    }
+    .toc.collapsed .toc-toggle { transform: rotate(-90deg); }
+    .toc.collapsed ul { display: none; }
+
+    /* ─── Reading time badge ─── */
+    .reading-time {
+      display: inline-block; margin-top: 8px; padding: 4px 12px;
+      background: var(--accent-bg); border: 1px solid var(--panel-border);
+      border-radius: 20px; font-size: 12px; color: var(--accent-light);
+      letter-spacing: 0.04em;
+    }
+
     @media (max-width: 940px) {
       .toc { display: none; }
       .hero-title { font-size: 26px; }
       article { padding: 20px; }
+      .back-top { bottom: 16px; right: 16px; width: 36px; height: 36px; font-size: 16px; }
     }
   </style>
 </head>
@@ -518,6 +562,8 @@ export async function renderHtmlFromMarkdown(payload) {
     ${toc}
     <article>${rendered}</article>
   </main>
+  <div class="progress-bar" id="progress-bar"></div>
+  <button class="back-top" id="back-top" title="Наверх">↑</button>
   <script type="module">
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
 
@@ -645,6 +691,57 @@ export async function renderHtmlFromMarkdown(payload) {
       }
     }, { threshold: 0.1 });
     fadeEls.forEach(el => fadeObserver.observe(el));
+
+    // ─── Reading progress bar ───
+    const progressBar = document.getElementById('progress-bar');
+    window.addEventListener('scroll', () => {
+      const scrollTop = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      const pct = docHeight > 0 ? (scrollTop / docHeight) * 100 : 0;
+      progressBar.style.width = pct + '%';
+    }, { passive: true });
+
+    // ─── Back-to-top button ───
+    const backTop = document.getElementById('back-top');
+    window.addEventListener('scroll', () => {
+      backTop.classList.toggle('visible', window.scrollY > 400);
+    }, { passive: true });
+    backTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+
+    // ─── Reading time ───
+    const articleText = document.querySelector('article')?.textContent || '';
+    const wordCount = articleText.trim().split(/\s+/).length;
+    const readingMin = Math.max(1, Math.round(wordCount / 200));
+    const badge = document.createElement('span');
+    badge.className = 'reading-time';
+    badge.textContent = '~' + readingMin + ' \u043c\u0438\u043d \u0447\u0442\u0435\u043d\u0438\u044f';
+    document.querySelector('.hero-sub')?.after(badge);
+
+    // ─── Highlight.js ───
+    if (typeof hljs !== 'undefined') {
+      document.querySelectorAll('article pre code').forEach(el => {
+        if (!el.closest('.mermaid-wrap')) hljs.highlightElement(el);
+      });
+    }
+
+    // ─── Collapsible TOC ───
+    const tocEl = document.querySelector('.toc');
+    if (tocEl) {
+      const tocTitle = tocEl.querySelector('.toc-title');
+      if (tocTitle) {
+        const header = document.createElement('div');
+        header.className = 'toc-header';
+        const toggleBtn = document.createElement('button');
+        toggleBtn.className = 'toc-toggle';
+        toggleBtn.textContent = '▼';
+        header.appendChild(tocTitle.cloneNode(true));
+        header.appendChild(toggleBtn);
+        tocTitle.replaceWith(header);
+        header.addEventListener('click', () => {
+          tocEl.classList.toggle('collapsed');
+        });
+      }
+    }
 
     // ─── Theme toggle handler ───
     themeBtn.addEventListener('click', async () => {

@@ -19,6 +19,8 @@ test('markdownToNotionBlocks converts common markdown structures', () => {
     'paragraph line 1',
     'paragraph line 2',
     '',
+    '# Second Title',
+    '',
     '```mermaid',
     'graph TD',
     'A-->B',
@@ -29,7 +31,8 @@ test('markdownToNotionBlocks converts common markdown structures', () => {
   assert.ok(blocks.length >= 6);
 
   const types = blocks.map((b) => b.type);
-  assert.ok(types.includes('heading_1'));
+  // First h1 is skipped (user sets Notion page title manually)
+  assert.ok(types.includes('heading_1'), 'second h1 should still render');
   assert.ok(types.includes('heading_2'));
   assert.ok(types.includes('bulleted_list_item'));
   assert.ok(types.includes('numbered_list_item'));

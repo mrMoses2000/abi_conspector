@@ -648,6 +648,7 @@ export function markdownToNotionBlocks(md) {
   let inCode = false;
   let codeLang = '';
   let codeBuffer = [];
+  let seenFirstH1 = false;
 
   // Callout state
   let inCallout = false;
@@ -864,6 +865,8 @@ export function markdownToNotionBlocks(md) {
     const h1 = line.match(/^#\s+(.+)/);
     if (h1) {
       flushParagraph();
+      // Skip the first h1 — the user sets the page title manually in Notion
+      if (!seenFirstH1) { seenFirstH1 = true; continue; }
       blocks.push({ object: 'block', type: 'heading_1', heading_1: { rich_text: parseInlineMarkdown(h1[1]) } });
       continue;
     }
