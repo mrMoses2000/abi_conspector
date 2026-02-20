@@ -537,69 +537,108 @@ export function notionBlocksToMarkdown(blocks) {
  * @param {string} md
  */
 /**
- * Parse mermaid mindmap syntax into Notion bulleted list blocks.
- * Supports: root((text)), (text), ("text"), plain text nodes.
+ * Parse mermaid mindmap syntax into Notion bulleted list blocks with nesting.
+ * Uses indentation to determine hierarchy and Notion's `children` for sub-items.
  */
 function parseMermaidMindmap(text) {
   const lines = text.split('\n');
-  const blocks = [];
+  const nodes = []; // { depth, text, bold }
 
   for (const line of lines) {
-    // Skip 'mindmap' keyword and empty lines
-    const trimmed = line.trimEnd();
-    if (!trimmed || /^\s*mindmap\s*$/i.test(trimmed)) continue;
+    const raw = line.replace(/\t/g, '  '); // normalize tabs
+    if (!raw.trim() || /^\s*mindmap\s*$/i.test(raw.trim())) continue;
 
-    // Extract node text from various formats
+    // Measure indentation (spaces before content)
+    const indent = raw.search(/\S/);
+
+    // Extract text from various node formats
+    const trimmed = raw.trim();
     let nodeText = null;
+    let bold = false;
 
-    // root((text)) or ((text))
+    // root((text))
     const rootMatch = trimmed.match(/\(\((.+?)\)\)/);
     if (rootMatch) {
-      nodeText = rootMatch[1];
-      blocks.push({
-        object: 'block',
-        type: 'bulleted_list_item',
-        bulleted_list_item: {
-          rich_text: [{ type: 'text', text: { content: nodeText }, annotations: { bold: true } }]
-        }
-      });
-      continue;
+      nodeText = rootMatch[1]; bold = true;
     }
 
-    // ("text") — quoted node
-    const quotedMatch = trimmed.match(/\("(.+?)"\)/);
-    if (quotedMatch) {
-      nodeText = quotedMatch[1];
-    }
-
-    // (text) — parenthesized node (not quoted)
+    // ("text") — quoted
     if (!nodeText) {
-      const parenMatch = trimmed.match(/\(([^"()]+)\)/);
-      if (parenMatch) {
-        nodeText = parenMatch[1].trim();
-      }
+      const qm = trimmed.match(/\("(.+?)"\)/);
+      if (qm) nodeText = qm[1];
     }
 
-    // Plain text node (indented, no parens) — e.g. "  Analysis"
+    // (text) — parenthesized
     if (!nodeText) {
-      const plainMatch = trimmed.match(/^\s{2,}(\S.+)/);
-      if (plainMatch) {
-        nodeText = plainMatch[1];
-      }
+      const pm = trimmed.match(/\(([^"()]+)\)/);
+      if (pm) nodeText = pm[1].trim();
+    }
+
+    // Plain text node
+    if (!nodeText) {
+      nodeText = trimmed;
     }
 
     if (nodeText) {
-      blocks.push({
-        object: 'block',
-        type: 'bulleted_list_item',
-        bulleted_list_item: {
-          rich_text: [{ type: 'text', text: { content: nodeText } }]
-        }
-      });
+      nodes.push({ depth: indent, text: nodeText, bold });
     }
   }
 
-  return blocks;
+  if (nodes.length === 0) return [];
+
+  // Normalize depths to levels (0, 1, 2, ...)
+  const uniqueDepths = [...new Set(nodes.map(n => n.depth))].sort((a, b) => a - b);
+  const depthToLevel = {};
+  uniqueDepths.forEach((d, i) => { depthToLevel[d] = i; });
+  nodes.forEach(n => { n.level = depthToLevel[n.depth]; });
+
+  // Build a tree: each node at level 0 is top-level, children nested via Notion `children`
+  function makeBlock(node) {
+    return {
+      object: 'block',
+      type: 'bulleted_list_item',
+      bulleted_list_item: {
+        rich_text: [{ type: 'text', text: { content: node.text }, annotations: { bold: node.bold } }]
+      }
+    };
+  }
+
+  // Build blocks recursively: find children of each node
+  function buildTree(parentIdx, parentLevel) {
+    const children = [];
+    let i = parentIdx + 1;
+    while (i < nodes.length) {
+      if (nodes[i].level <= parentLevel) break; // sibling or parent level
+      if (nodes[i].level === parentLevel + 1) {
+        const block = makeBlock(nodes[i]);
+        const subChildren = buildTree(i, nodes[i].level);
+        if (subChildren.length > 0) {
+          block.bulleted_list_item.children = subChildren;
+        }
+        children.push(block);
+        // Skip past all descendants
+        i = findNextSiblingOrHigher(i, nodes[i].level);
+      } else {
+        i++;
+      }
+    }
+    return children;
+  }
+
+  function findNextSiblingOrHigher(idx, level) {
+    let i = idx + 1;
+    while (i < nodes.length && nodes[i].level > level) i++;
+    return i;
+  }
+
+  // Top-level: root node with its children
+  const rootBlock = makeBlock(nodes[0]);
+  const rootChildren = buildTree(0, nodes[0].level);
+  if (rootChildren.length > 0) {
+    rootBlock.bulleted_list_item.children = rootChildren;
+  }
+
+  return [rootBlock];
 }
 
 export function markdownToNotionBlocks(md) {
