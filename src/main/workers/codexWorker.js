@@ -135,9 +135,31 @@ function getCodexSkillPath(workdir, skillName) {
 export async function runCodexMergeFromMarkdown(payload) {
   const { structuredMarkdown, baseMarkdown, outputPath, recording, codexConfig } = payload;
   const skillPath = getCodexSkillPath(codexConfig.workdir, 'conspector-merge');
-  const prompt = `$conspector-merge\nPath: ${skillPath}\n\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\``;
 
-  await runCodex(codexConfig, outputPath, prompt);
+  const BASE_LARGE_THRESHOLD = 3000;
+  const isLargeBase = baseMarkdown && baseMarkdown.length > BASE_LARGE_THRESHOLD;
+
+  if (isLargeBase) {
+    // ─── Append-only strategy ───
+    const prompt = `$conspector-merge\nPath: ${skillPath}\n\nКРИТИЧЕСКИ ВАЖНО: Существующий конспект (Base note) ОГРОМНЫЙ. НЕ переписывай его.\nВыдай ТОЛЬКО новые разделы и дополнения из Structured markdown, которых НЕТ в Base note.\nПомечай дополнения к существующим разделам: "### Дополнение к: [название раздела]"\nЕсли дублируется — напиши "<!-- no new content -->"\n\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown (НЕ повторяй, только читай для контекста):\n\n\`\`\`md\n${baseMarkdown}\n\`\`\``;
+
+    await runCodex(codexConfig, outputPath, prompt);
+
+    const newContent = await readText(outputPath);
+    const trimmed = newContent.trim();
+
+    if (trimmed === '<!-- no new content -->' || trimmed.length < 20) {
+      await fs.writeFile(outputPath, baseMarkdown, 'utf8');
+    } else {
+      const merged = baseMarkdown.trimEnd() + '\n\n---\n\n' + trimmed;
+      await fs.writeFile(outputPath, merged, 'utf8');
+    }
+  } else {
+    // ─── Full merge for small/empty base ───
+    const prompt = `$conspector-merge\nPath: ${skillPath}\n\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\``;
+
+    await runCodex(codexConfig, outputPath, prompt);
+  }
 }
 
 /**

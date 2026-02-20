@@ -146,9 +146,66 @@ export async function runGeminiMergeFromMarkdown(payload) {
     const skillPath = getGeminiSkillPath(geminiConfig.workdir, 'conspector-merge');
     const skillContent = await readText(skillPath).catch(() => '');
 
-    const prompt = `<system_instructions>\n${skillContent}\n</system_instructions>\n\n<context>\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\`\n</context>\n\n<task>\nВыполни задачу по интеграции базы знаний согласно системным инструкциям.\n</task>`;
+    const BASE_LARGE_THRESHOLD = 3000; // characters
+    const isLargeBase = baseMarkdown && baseMarkdown.length > BASE_LARGE_THRESHOLD;
 
-    await runGemini(geminiConfig, outputPath, prompt);
+    if (isLargeBase) {
+        // ─── Append-only strategy for large base notes ───
+        // Instead of asking LLM to reproduce the entire document (which causes truncation),
+        // ask it to generate ONLY the new additions, then concatenate programmatically.
+        const appendPrompt = `<system_instructions>
+${skillContent}
+
+КРИТИЧЕСКИ ВАЖНОЕ ДОПОЛНЕНИЕ:
+У тебя уже есть большой существующий конспект (Base note). Ты НЕ ДОЛЖЕН переписывать или воспроизводить его.
+Твоя задача — проанализировать новый материал (Structured markdown) и существующий конспект, а затем выдать ТОЛЬКО:
+1. Новые разделы/подразделы, которых нет в существующем конспекте
+2. Дополнения к существующим разделам (помечай: "### Дополнение к: [название раздела]")
+3. Обновлённую mindmap диаграмму, если она нужна (включая темы из обоих источников)
+
+НЕ повторяй существующий текст. Выводи ТОЛЬКО новый контент для добавления.
+Если новый материал полностью дублирует существующий — напиши "<!-- no new content -->"
+</system_instructions>
+
+<context>
+Structured markdown (НОВЫЙ материал):
+
+\`\`\`md
+${structuredMarkdown}
+\`\`\`
+
+Base note markdown (СУЩЕСТВУЮЩИЙ конспект — НЕ повторяй его, только читай для контекста):
+
+\`\`\`md
+${baseMarkdown}
+\`\`\`
+</context>
+
+<task>
+Выдай ТОЛЬКО новые разделы и дополнения, которые нужно добавить к существующему конспекту.
+НЕ воспроизводи текст Base note. Выдай только новый контент.
+</task>`;
+
+        await runGemini(geminiConfig, outputPath, appendPrompt);
+
+        // Read LLM output (new sections only)
+        const newContent = await readText(outputPath);
+        const trimmed = newContent.trim();
+
+        // If LLM says no new content, keep base as-is
+        if (trimmed === '<!-- no new content -->' || trimmed.length < 20) {
+            await fs.writeFile(outputPath, baseMarkdown, 'utf8');
+        } else {
+            // Concatenate: base note + separator + new content
+            const merged = baseMarkdown.trimEnd() + '\n\n---\n\n' + trimmed;
+            await fs.writeFile(outputPath, merged, 'utf8');
+        }
+    } else {
+        // ─── Full merge for small/empty base notes ───
+        const prompt = `<system_instructions>\n${skillContent}\n</system_instructions>\n\n<context>\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\`\n</context>\n\n<task>\nВыполни задачу по интеграции базы знаний согласно системным инструкциям.\n</task>`;
+
+        await runGemini(geminiConfig, outputPath, prompt);
+    }
 }
 
 /**
