@@ -20,9 +20,11 @@ async function withRetries(action) {
     try {
       return await action();
     } catch (error) {
+      const status = error?.status || error?.statusCode || 0;
       const retryable =
-        isNotionClientError(error) &&
-        (error.code === APIErrorCode.RateLimited || error.code === APIErrorCode.ServiceUnavailable);
+        (isNotionClientError(error) &&
+          (error.code === APIErrorCode.RateLimited || error.code === APIErrorCode.ServiceUnavailable)) ||
+        [502, 503, 504].includes(status);
 
       if (!retryable || attempt >= 4) {
         throw error;
