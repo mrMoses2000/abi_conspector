@@ -81,9 +81,6 @@ function parseRetryAfterSec(response, bodyText) {
 async function transcribeSingleFileViaGroq({ filePath, apiKey, language, model, onLog }) {
   const maxRetries = 3;
   const baseDelaySec = 15;
-  // Max wait time we are willing to spend on a single 429 retry (10 minutes).
-  // Beyond this it's faster to fall through to AssemblyAI fallback.
-  const MAX_RETRY_WAIT_SEC = 600;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const form = new FormData();
@@ -107,27 +104,28 @@ async function transcribeSingleFileViaGroq({ filePath, apiKey, language, model, 
       onLog('stdout', `groq status=${response.status} file=${path.basename(filePath)} attempt=${attempt + 1}\n`);
     }
 
-    // Retry on rate limit
-    if (response.status === 429 && attempt < maxRetries) {
+    // On 429 (rate limit): throw IMMEDIATELY.
+    // executeSttFallback will switch to AssemblyAI/Deepgram without any delay.
+    // Waiting here would block the chain for 5+ minutes pointlessly.
+    if (response.status === 429) {
       const retryAfterSec = parseRetryAfterSec(response, bodyText);
-      const delaySec = retryAfterSec !== null ? retryAfterSec : baseDelaySec * Math.pow(2, attempt);
-
-      if (delaySec > MAX_RETRY_WAIT_SEC) {
-        // Wait too long — throw and let the STT pipeline fall back to AssemblyAI
-        if (typeof onLog === 'function') {
-          onLog('stderr', `groq 429 rate limit wait too long (${delaySec}s > ${MAX_RETRY_WAIT_SEC}s), giving up\n`);
-        }
-        throw new ControlledError(
-          'GROQ_STT_FAILED',
-          `Groq STT failed with status 429: ${bodyText.slice(0, 280)}`
-        );
-      }
-
       if (typeof onLog === 'function') {
         onLog(
-          'stdout',
-          `groq 429 rate limit, retrying in ${delaySec}s (attempt ${attempt + 1}/${maxRetries}, retry-after=${retryAfterSec ?? 'estimated'})\n`
+          'stderr',
+          `groq 429 rate limit (retry-after=${retryAfterSec ?? 'unknown'}s), falling back immediately\n`
         );
+      }
+      throw new ControlledError(
+        'GROQ_STT_FAILED',
+        `Groq STT failed with status 429: ${bodyText.slice(0, 280)}`
+      );
+    }
+
+    // Retry only on transient 5xx server errors
+    if (response.status >= 500 && attempt < maxRetries) {
+      const delaySec = baseDelaySec * Math.pow(2, attempt);
+      if (typeof onLog === 'function') {
+        onLog('stdout', `groq ${response.status} server error, retrying in ${delaySec}s (attempt ${attempt + 1}/${maxRetries})\n`);
       }
       await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
       continue;
