@@ -169,13 +169,15 @@ export async function renderHtmlFromMarkdown(payload) {
       position: sticky; top: 24px; float: right; width: 220px; margin-left: 32px; margin-bottom: 16px;
       background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius);
       padding: 16px; backdrop-filter: blur(12px); font-size: 13px; max-height: calc(100vh - 48px); overflow-y: auto;
+      scrollbar-width: thin; scrollbar-color: var(--accent) transparent;
     }
     .toc-title { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent-light); margin-bottom: 10px; }
     .toc ul { list-style: none; }
-    .toc li { margin-bottom: 6px; }
+    .toc li { margin-bottom: 6px; transition: all 0.2s ease; }
     .toc li.toc-sub { padding-left: 14px; }
-    .toc a { color: var(--text-secondary); text-decoration: none; transition: color 0.15s; }
+    .toc a { color: var(--text-secondary); text-decoration: none; transition: color 0.2s, border-color 0.2s; border-left: 2px solid transparent; padding-left: 8px; }
     .toc a:hover { color: var(--accent-light); }
+    .toc li.toc-active > a { color: var(--accent-light); border-left-color: var(--accent); font-weight: 500; }
 
     /* ─── Article ─── */
     article {
@@ -242,15 +244,42 @@ export async function renderHtmlFromMarkdown(payload) {
     article pre code { background: transparent; padding: 0; color: inherit; font-size: 14px; }
 
     /* ─── Tables ─── */
-    article table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px; }
-    article th, article td { border: 1px solid rgba(99,102,241,0.12); padding: 10px 12px; text-align: left; }
-    article th { background: rgba(99,102,241,0.06); color: var(--accent-light); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+    article .table-scroll { overflow-x: auto; margin: 16px 0; -webkit-overflow-scrolling: touch; }
+    article table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 0; }
+    article th, article td { border: 1px solid rgba(99,102,241,0.12); padding: 10px 12px; text-align: left; overflow-wrap: break-word; word-break: break-word; }
+    article th { background: rgba(99,102,241,0.08); color: var(--accent-light); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
     article tr:nth-child(even) { background: rgba(15,23,42,0.4); }
+    article tr:hover { background: rgba(99,102,241,0.06); }
 
-    /* ─── Mermaid ─── */
-    .mermaid, pre.mermaid {
+    /* ─── Mermaid with zoom/pan ─── */
+    .mermaid-wrap {
+      position: relative; margin: 20px 0;
       background: rgba(15,23,42,0.6); border: 1px solid var(--panel-border);
-      border-radius: var(--radius); padding: 16px; margin: 16px 0;
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .mermaid-wrap .mermaid-viewport {
+      overflow: hidden; cursor: grab; min-height: 120px;
+      display: flex; align-items: center; justify-content: center;
+      padding: 16px;
+    }
+    .mermaid-wrap .mermaid-viewport.grabbing { cursor: grabbing; }
+    .mermaid-wrap .mermaid-viewport .mermaid {
+      transform-origin: center center;
+      transition: transform 0.1s ease;
+    }
+    .mermaid-controls {
+      position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; z-index: 5;
+    }
+    .mermaid-controls button {
+      width: 28px; height: 28px; border-radius: 6px;
+      background: var(--panel); border: 1px solid var(--panel-border);
+      color: var(--text-secondary); font-size: 14px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      backdrop-filter: blur(8px); transition: all 0.15s;
+    }
+    .mermaid-controls button:hover { color: var(--accent-light); border-color: var(--accent); }
+    .mermaid, pre.mermaid {
+      background: transparent; padding: 0; margin: 0;
       text-align: center;
     }
 
@@ -260,6 +289,11 @@ export async function renderHtmlFromMarkdown(payload) {
       background: linear-gradient(90deg, transparent, var(--accent), transparent);
       margin: 32px 0; opacity: 0.4;
     }
+
+    /* ─── Overflow protection ─── */
+    article * { min-width: 0; }
+    article pre { overflow-x: auto; }
+    article img { max-width: 100%; height: auto; }
 
     /* ─── Print ─── */
     @media print {
@@ -294,7 +328,7 @@ export async function renderHtmlFromMarkdown(payload) {
   <script type="module">
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
     mermaid.initialize({
-      startOnLoad: true,
+      startOnLoad: false,
       theme: 'dark',
       themeVariables: {
         darkMode: true,
@@ -305,6 +339,89 @@ export async function renderHtmlFromMarkdown(payload) {
       },
       securityLevel: 'loose'
     });
+
+    // Wrap each .mermaid in a zoom/pan container, then render
+    document.querySelectorAll('.mermaid, pre code.language-mermaid').forEach(el => {
+      // Unwrap <pre><code> if needed
+      const mermaidEl = el.tagName === 'CODE' ? el.parentElement : el;
+      if (mermaidEl.tagName === 'PRE') {
+        const div = document.createElement('div');
+        div.className = 'mermaid';
+        div.textContent = el.textContent;
+        mermaidEl.replaceWith(div);
+        el = div;
+      } else {
+        el = mermaidEl;
+      }
+
+      const wrap = document.createElement('div');
+      wrap.className = 'mermaid-wrap';
+      const viewport = document.createElement('div');
+      viewport.className = 'mermaid-viewport';
+      const controls = document.createElement('div');
+      controls.className = 'mermaid-controls';
+      controls.innerHTML = '<button data-action="zoom-in" title="Увеличить">+</button>'
+        + '<button data-action="zoom-out" title="Уменьшить">−</button>'
+        + '<button data-action="reset" title="Сбросить">⟲</button>';
+
+      el.parentNode.insertBefore(wrap, el);
+      viewport.appendChild(el);
+      wrap.appendChild(viewport);
+      wrap.appendChild(controls);
+
+      // Zoom/pan state
+      let scale = 1, panX = 0, panY = 0, dragging = false, startX = 0, startY = 0;
+      const applyTransform = () => {
+        el.style.transform = \`translate(\${panX}px, \${panY}px) scale(\${scale})\`;
+      };
+
+      controls.addEventListener('click', e => {
+        const action = e.target.closest('button')?.dataset.action;
+        if (action === 'zoom-in') scale = Math.min(scale * 1.3, 5);
+        else if (action === 'zoom-out') scale = Math.max(scale / 1.3, 0.3);
+        else if (action === 'reset') { scale = 1; panX = 0; panY = 0; }
+        applyTransform();
+      });
+
+      viewport.addEventListener('wheel', e => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        scale = Math.max(0.3, Math.min(5, scale * delta));
+        applyTransform();
+      }, { passive: false });
+
+      viewport.addEventListener('mousedown', e => {
+        if (scale <= 1) return;
+        dragging = true; startX = e.clientX - panX; startY = e.clientY - panY;
+        viewport.classList.add('grabbing');
+      });
+      document.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        panX = e.clientX - startX; panY = e.clientY - startY;
+        applyTransform();
+      });
+      document.addEventListener('mouseup', () => {
+        dragging = false; viewport.classList.remove('grabbing');
+      });
+    });
+
+    await mermaid.run();
+
+    // ─── TOC active section tracking ───
+    const tocLinks = document.querySelectorAll('.toc a');
+    const headings = Array.from(document.querySelectorAll('h2[id], h3[id]'));
+    if (tocLinks.length > 0 && headings.length > 0) {
+      const observer = new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            tocLinks.forEach(a => a.parentElement.classList.remove('toc-active'));
+            const active = document.querySelector(\`.toc a[href="#\${entry.target.id}"]\`);
+            if (active) active.parentElement.classList.add('toc-active');
+          }
+        }
+      }, { rootMargin: '-10% 0px -80% 0px' });
+      headings.forEach(h => observer.observe(h));
+    }
   </script>
 </body>
 </html>`;
