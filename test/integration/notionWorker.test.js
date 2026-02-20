@@ -8,28 +8,9 @@ import assert from 'node:assert/strict';
 
 describe('Notion Worker Integration', () => {
 
-    test('Notion Client initialization and basic configuration', async (t) => {
-        // We will mock the @notionhq/client to ensure it's called with the correct args
-        const notionModule = await import('@notionhq/client');
-
-        let clientArgs = null;
-        t.mock.method(notionModule, 'Client', class MockClient {
-            constructor(args) {
-                clientArgs = args;
-                this.blocks = { children: { list: async () => ({ results: [], has_more: false }) } };
-                this.search = async () => ({ results: [] });
-            }
-        });
-
-        // Dynamic import so it uses the mocked Client constructor
+    test('Notion Worker exports basic functions', async () => {
+        // We do a simple dynamic import to check it loads and exports
         const worker = await import('../../src/main/workers/notionWorker.js');
-
-        // This will trigger the creation of a new Client inside writeMergedToNotion if notionToken is present
-        // Since we can't easily mock the internal instance, we test the public interfaces that interact with Notion.
-
-        // Since writeMergedToNotion is highly imperative and depends on many file writes,
-        // we'll focus on testing the resilience and error handling.
-
         assert.ok(worker.writeMergedToNotion, 'Worker should export writeMergedToNotion');
     });
 
