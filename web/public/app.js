@@ -65,6 +65,13 @@ function setLoginTab(activeLogin) {
   refs.registerForm.classList.toggle('hidden', activeLogin);
 }
 
+function showWelcomeScreen() {
+  refs.welcomeCard.classList.remove('hidden');
+  refs.authCard.classList.add('hidden');
+  refs.appCard.classList.add('hidden');
+  refs.adminCard.classList.add('hidden');
+}
+
 function showAuthScreen() {
   refs.welcomeCard.classList.add('hidden');
   refs.authCard.classList.remove('hidden');
@@ -467,7 +474,7 @@ async function enterApp() {
 
 async function bootstrapSession() {
   if (!state.token) {
-    showAuthScreen();
+    showWelcomeScreen();
     setStatus(refs.authStatus, 'Ожидание входа');
     return;
   }
@@ -506,7 +513,7 @@ async function handleLogout(silent = false) {
   } finally {
     saveToken('');
     state.user = null;
-    showAuthScreen();
+    showWelcomeScreen();
     if (!silent) {
       setStatus(refs.authStatus, 'Вы вышли из системы');
     }
@@ -625,8 +632,8 @@ async function init() {
 }
 
 init().catch((error) => {
-  showAuthScreen();
-  setStatus(refs.authStatus, `Ошибка инициализации: ${error.message}`, true);
+  showWelcomeScreen();
+  setStatus(refs.authStatus, 'Ошибка инициализации: ' + error.message, true);
 });
 
 // ─── Upload logic ───
