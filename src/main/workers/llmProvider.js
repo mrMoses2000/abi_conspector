@@ -1,5 +1,5 @@
-import { runCodexStructure, runCodexMerge, runCodexMergeFromMarkdown } from './codexWorker.js';
-import { runGeminiStructure, runGeminiMerge, runGeminiMergeFromMarkdown } from './geminiWorker.js';
+import { runCodexStructure, runCodexMerge, runCodexMergeFromMarkdown, runCodexUpdateContext } from './codexWorker.js';
+import { runGeminiStructure, runGeminiMerge, runGeminiMergeFromMarkdown, runGeminiUpdateContext } from './geminiWorker.js';
 
 /**
  * Returns the correct LLM config key name based on provider.
@@ -19,6 +19,7 @@ export function getStructureWorker(provider) {
             transcriptPath: payload.transcriptPath,
             structuredPath: payload.structuredPath,
             recording: payload.recording,
+            subjectContext: payload.subjectContext,
             geminiConfig: payload.llmConfig
         });
     }
@@ -26,6 +27,7 @@ export function getStructureWorker(provider) {
         transcriptPath: payload.transcriptPath,
         structuredPath: payload.structuredPath,
         recording: payload.recording,
+        subjectContext: payload.subjectContext,
         codexConfig: payload.llmConfig
     });
 }
@@ -70,6 +72,29 @@ export function getMergeFromMarkdownWorker(provider) {
         baseMarkdown: payload.baseMarkdown,
         outputPath: payload.outputPath,
         recording: payload.recording,
+        codexConfig: payload.llmConfig
+    });
+}
+
+/**
+ * Returns the context update worker function for the given provider.
+ * @param {'codex' | 'gemini'} provider
+ */
+export function getContextWorker(provider) {
+    if (provider === 'gemini') {
+        return (payload) => runGeminiUpdateContext({
+            pageMarkdown: payload.pageMarkdown,
+            existingContext: payload.existingContext,
+            pageNumber: payload.pageNumber,
+            outputPath: payload.outputPath,
+            geminiConfig: payload.llmConfig
+        });
+    }
+    return (payload) => runCodexUpdateContext({
+        pageMarkdown: payload.pageMarkdown,
+        existingContext: payload.existingContext,
+        pageNumber: payload.pageNumber,
+        outputPath: payload.outputPath,
         codexConfig: payload.llmConfig
     });
 }

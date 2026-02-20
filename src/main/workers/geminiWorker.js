@@ -213,6 +213,7 @@ ${baseMarkdown}
  *   transcriptPath: string;
  *   structuredPath: string;
  *   recording: any;
+ *   subjectContext?: string;
  *   geminiConfig: {
  *     mode: 'real' | 'mock';
  *     model: string;
@@ -224,13 +225,17 @@ ${baseMarkdown}
  * }} payload
  */
 export async function runGeminiStructure(payload) {
-    const { transcriptPath, structuredPath, recording, geminiConfig } = payload;
+    const { transcriptPath, structuredPath, recording, subjectContext, geminiConfig } = payload;
     const transcriptJson = await readText(transcriptPath);
 
     const skillPath = getGeminiSkillPath(geminiConfig.workdir, 'conspector-structure');
     const skillContent = await readText(skillPath).catch(() => '');
 
-    const prompt = `<system_instructions>\n${skillContent}\n</system_instructions>\n\n<context>\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\`\n</context>\n\n<task>\nПреобразуй транскрипт в конспект согласно системным инструкциям.\n</task>`;
+    const contextBlock = subjectContext
+        ? `\n\nSubject context (навигационная карта предыдущих лекций — используй для контекста, не дублируй уже описанные термины):\n\n\`\`\`md\n${subjectContext}\n\`\`\`\n`
+        : '';
+
+    const prompt = `<system_instructions>\n${skillContent}\n</system_instructions>\n\n<context>\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\`${contextBlock}\n</context>\n\n<task>\nПреобразуй транскрипт в конспект согласно системным инструкциям.\n</task>`;
 
     await runGemini(geminiConfig, structuredPath, prompt);
 }
@@ -268,3 +273,54 @@ export async function runGeminiMerge(payload) {
         geminiConfig
     });
 }
+
+/**
+ * @param {{
+ *   pageMarkdown: string;
+ *   existingContext: string;
+ *   pageNumber: number;
+ *   outputPath: string;
+ *   geminiConfig: {
+ *     mode: 'real' | 'mock';
+ *     model: string;
+ *     sandbox?: boolean;
+ *     timeoutMs: number;
+ *     workdir: string;
+ *     sourceNotePath: string;
+ *   };
+ * }} payload
+ */
+export async function runGeminiUpdateContext(payload) {
+    const { pageMarkdown, existingContext, pageNumber, outputPath, geminiConfig } = payload;
+    const skillPath = getGeminiSkillPath(geminiConfig.workdir, 'conspector-context');
+    const skillContent = await readText(skillPath).catch(() => '');
+
+    const prompt = `<system_instructions>\n${skillContent}\n</system_instructions>\n\n<context>\nPage markdown (Страница ${pageNumber}):\n\n\`\`\`md\n${pageMarkdown}\n\`\`\`\n\nExisting context.md:\n\n\`\`\`md\n${existingContext || '# (пусто — первая страница)'}\n\`\`\`\n</context>\n\n<task>\nСоздай или обнови context.md согласно системным инструкциям. Страница ${pageNumber}.\n</task>`;
+
+    await runGemini(geminiConfig, outputPath, prompt);
+}
+
+/**
+ * Review merged conspect for critical issues.
+ * @param {{
+ *   mergedMarkdown: string;
+ *   outputPath: string;
+ *   geminiConfig: object;
+ * }} payload
+ */
+export async function runGeminiReview(payload) {
+    const { mergedMarkdown, outputPath, geminiConfig } = payload;
+    const skillPath = getGeminiSkillPath(geminiConfig.workdir, 'conspector-review');
+    const skillContent = await readText(skillPath).catch(() => '');
+
+    // Limit input to avoid exceeding context window — send last 60K chars max
+    const MAX_REVIEW_CHARS = 60000;
+    const reviewText = mergedMarkdown.length > MAX_REVIEW_CHARS
+        ? mergedMarkdown.slice(-MAX_REVIEW_CHARS)
+        : mergedMarkdown;
+
+    const prompt = `<system_instructions>\n${skillContent}\n</system_instructions>\n\n<context>\nMerged conspect (итоговый конспект для проверки):\n\n\`\`\`md\n${reviewText}\n\`\`\`\n</context>\n\n<task>\nПроверь конспект и верни JSON с критическими проблемами.\n</task>`;
+
+    await runGemini(geminiConfig, outputPath, prompt);
+}
+

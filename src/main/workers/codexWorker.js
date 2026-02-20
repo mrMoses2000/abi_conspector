@@ -167,6 +167,7 @@ export async function runCodexMergeFromMarkdown(payload) {
  *   transcriptPath: string;
  *   structuredPath: string;
  *   recording: any;
+ *   subjectContext?: string;
  *   codexConfig: {
  *     mode: 'real' | 'mock';
  *     fullAuto?: boolean;
@@ -179,11 +180,14 @@ export async function runCodexMergeFromMarkdown(payload) {
  * }} payload
  */
 export async function runCodexStructure(payload) {
-  const { transcriptPath, structuredPath, recording, codexConfig } = payload;
+  const { transcriptPath, structuredPath, recording, subjectContext, codexConfig } = payload;
   const transcriptJson = await readText(transcriptPath);
 
   const skillPath = getCodexSkillPath(codexConfig.workdir, 'conspector-structure');
-  const prompt = `$conspector-structure\nPath: ${skillPath}\n\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\``;
+  const contextBlock = subjectContext
+    ? `\n\nSubject context (навигационная карта предыдущих лекций):\n\n\`\`\`md\n${subjectContext}\n\`\`\``
+    : '';
+  const prompt = `$conspector-structure\nPath: ${skillPath}\n\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\`${contextBlock}`;
 
   await runCodex(codexConfig, structuredPath, prompt);
 }
@@ -221,4 +225,29 @@ export async function runCodexMerge(payload) {
     recording,
     codexConfig
   });
+}
+
+/**
+ * @param {{
+ *   pageMarkdown: string;
+ *   existingContext: string;
+ *   pageNumber: number;
+ *   outputPath: string;
+ *   codexConfig: {
+ *     mode: 'real' | 'mock';
+ *     fullAuto?: boolean;
+ *     model: string;
+ *     reasoningEffort?: string;
+ *     timeoutMs: number;
+ *     workdir: string;
+ *     sourceNotePath: string;
+ *   };
+ * }} payload
+ */
+export async function runCodexUpdateContext(payload) {
+  const { pageMarkdown, existingContext, pageNumber, outputPath, codexConfig } = payload;
+  const skillPath = getCodexSkillPath(codexConfig.workdir, 'conspector-context');
+  const prompt = `$conspector-context\nPath: ${skillPath}\n\nPage markdown (Страница ${pageNumber}):\n\n\`\`\`md\n${pageMarkdown}\n\`\`\`\n\nExisting context.md:\n\n\`\`\`md\n${existingContext || '# (пусто — первая страница)'}\n\`\`\``;
+
+  await runCodex(codexConfig, outputPath, prompt);
 }

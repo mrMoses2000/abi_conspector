@@ -3,7 +3,7 @@ import path from 'node:path';
 import { normalizeToFlac } from '../audio/ffmpeg.js';
 import { ControlledError } from '../utils/errors.js';
 import { runSttDiarization } from '../workers/sttWorker.js';
-import { getStructureWorker, getMergeWorker, getMergeFromMarkdownWorker, getLlmConfigKey, buildLlmFallbackChain } from '../workers/llmProvider.js';
+import { getStructureWorker, getMergeWorker, getMergeFromMarkdownWorker, getContextWorker, getLlmConfigKey, buildLlmFallbackChain } from '../workers/llmProvider.js';
 import { renderEmergencyHtml, renderHtmlFromMarkdown } from '../workers/htmlWorker.js';
 import { writeMergedToNotion } from '../workers/notionWorker.js';
 import { executeWithLlmFallback } from '../utils/fallback.js';
@@ -137,9 +137,16 @@ export function createMergePipeline(deps) {
       const llmChain = buildLlmFallbackChain(llmModel, runtimeConfig);
 
       await stage('codex_structure', async () => {
+        // Read subject context if recording belongs to a subject
+        let subjectContext = '';
+        if (recording.subject_id) {
+          const contextPath = path.join(managedPaths.subjects, recording.subject_id, 'context.md');
+          try { subjectContext = await fs.readFile(contextPath, 'utf8'); } catch { /* no context yet */ }
+        }
+
         await executeWithLlmFallback(llmChain, runtimeConfig, appendWarning, 'codex_structure', async (provider, llmConfig) => {
           const runStructure = getStructureWorker(provider);
-          await runStructure({ transcriptPath, structuredPath, recording, llmConfig });
+          await runStructure({ transcriptPath, structuredPath, recording, subjectContext, llmConfig });
         });
       });
 
@@ -183,30 +190,82 @@ export function createMergePipeline(deps) {
         }
       });
 
-      // ─── Subject-level merge (if recording belongs to a subject) ───
+      // ─── Subject-level multi-pass pipeline ───
       if (recording.subject_id) {
         const subjectDir = path.join(managedPaths.subjects, recording.subject_id);
-        await fs.mkdir(subjectDir, { recursive: true });
+        const pagesDir = path.join(subjectDir, 'pages');
+        await fs.mkdir(pagesDir, { recursive: true });
+        const contextPath = path.join(subjectDir, 'context.md');
         const subjectMergedPath = path.join(subjectDir, 'merged.md');
         const subjectHtmlPath = path.join(subjectDir, 'conspect.html');
 
-        await stage('merge_subject', async () => {
-          const structuredMd = await fs.readFile(structuredPath, 'utf8');
-          let existingSubjectMd = '';
-          try {
-            existingSubjectMd = await fs.readFile(subjectMergedPath, 'utf8');
-          } catch { /* first recording for this subject */ }
+        // ─── Pass 1: Save structured output as individual page ───
+        let pageNumber;
+        let pagePath;
+        await stage('save_page', async () => {
+          // Determine page number from existing pages
+          const existingPages = await fs.readdir(pagesDir).catch(() => []);
+          const pageFiles = existingPages
+            .filter(f => /^\d+\.md$/.test(f))
+            .sort();
+          pageNumber = pageFiles.length + 1;
+          const paddedNum = String(pageNumber).padStart(3, '0');
+          pagePath = path.join(pagesDir, `${paddedNum}.md`);
 
-          await executeWithLlmFallback(llmChain, runtimeConfig, appendWarning, 'merge_subject', async (provider, llmConfig) => {
-            const runMergeFromMd = getMergeFromMarkdownWorker(provider);
-            await runMergeFromMd({
-              structuredMarkdown: structuredMd,
-              baseMarkdown: existingSubjectMd,
-              outputPath: subjectMergedPath,
-              recording,
+          // Copy structured markdown as the new page
+          const structuredMd = await fs.readFile(structuredPath, 'utf8');
+          await fs.writeFile(pagePath, structuredMd, 'utf8');
+        });
+
+        // ─── Pass 2: Update context.md navigation map ───
+        await stage('update_context', async () => {
+          const pageMarkdown = await fs.readFile(pagePath, 'utf8');
+          let existingContext = '';
+          try {
+            existingContext = await fs.readFile(contextPath, 'utf8');
+          } catch { /* first page — context doesn't exist yet */ }
+
+          await executeWithLlmFallback(llmChain, runtimeConfig, appendWarning, 'update_context', async (provider, llmConfig) => {
+            const runContext = getContextWorker(provider);
+            await runContext({
+              pageMarkdown,
+              existingContext,
+              pageNumber,
+              outputPath: contextPath,
               llmConfig
             });
           });
+        });
+
+        // ─── Programmatic concatenation of all pages ───
+        await stage('concat_pages', async () => {
+          const allFiles = await fs.readdir(pagesDir);
+          const pageFiles = allFiles
+            .filter(f => /^\d+\.md$/.test(f))
+            .sort();
+
+          // Read context.md for the table of contents header
+          let contextMd = '';
+          try {
+            contextMd = await fs.readFile(contextPath, 'utf8');
+          } catch { /* no context yet */ }
+
+          const parts = [];
+
+          // Add context as TOC header if it exists
+          if (contextMd.trim()) {
+            parts.push(contextMd.trim());
+            parts.push('\n\n---\n\n');
+          }
+
+          // Concatenate all pages
+          for (let i = 0; i < pageFiles.length; i++) {
+            const pageContent = await fs.readFile(path.join(pagesDir, pageFiles[i]), 'utf8');
+            if (i > 0) parts.push('\n\n---\n\n');
+            parts.push(pageContent.trim());
+          }
+
+          await fs.writeFile(subjectMergedPath, parts.join(''), 'utf8');
         });
 
         await stage('render_subject_html', async () => {
@@ -236,6 +295,82 @@ export function createMergePipeline(deps) {
                 `emergency subject html failed: ${emergencyError instanceof Error ? emergencyError.message : 'unknown error'}`
               );
             }
+          }
+        });
+
+        // ─── Quality review loop: critique → fix → repeat ───
+        await stage('review_quality', async () => {
+          const MAX_REVIEW_ITERATIONS = 3;
+          const reviewLogPath = path.join(subjectDir, 'review.json');
+
+          for (let iteration = 1; iteration <= MAX_REVIEW_ITERATIONS; iteration++) {
+            // Read current merged content
+            const mergedContent = await fs.readFile(subjectMergedPath, 'utf8');
+            const reviewOutputPath = path.join(subjectDir, `review_${iteration}.json`);
+
+            // Ask LLM to review
+            try {
+              await executeWithLlmFallback(llmChain, runtimeConfig, appendWarning, 'review_quality', async (provider, llmConfig) => {
+                const { runGeminiReview } = await import('../workers/geminiWorker.js');
+                await runGeminiReview({
+                  mergedMarkdown: mergedContent,
+                  outputPath: reviewOutputPath,
+                  geminiConfig: llmConfig
+                });
+              });
+            } catch (reviewError) {
+              appendWarning(`review iteration ${iteration} failed: ${reviewError instanceof Error ? reviewError.message : 'unknown'}`);
+              break;
+            }
+
+            // Parse review result
+            let reviewResult;
+            try {
+              const rawReview = await fs.readFile(reviewOutputPath, 'utf8');
+              // Strip markdown code fences if LLM wrapped the JSON
+              const cleaned = rawReview.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+              reviewResult = JSON.parse(cleaned);
+            } catch {
+              appendWarning(`review iteration ${iteration}: could not parse review JSON`);
+              break;
+            }
+
+            // Save review log
+            await fs.writeFile(reviewLogPath, JSON.stringify(reviewResult, null, 2), 'utf8');
+
+            // Check if no critical issues
+            const criticalIssues = (reviewResult.issues || []).filter(i => i.severity === 'critical');
+            if (criticalIssues.length === 0) {
+              break; // All good — exit loop
+            }
+
+            // Apply find/replace patches from critical issues
+            let fixedContent = mergedContent;
+            let appliedFixes = 0;
+            for (const issue of criticalIssues) {
+              if (issue.find && issue.replace !== undefined && fixedContent.includes(issue.find)) {
+                fixedContent = fixedContent.replace(issue.find, issue.replace);
+                appliedFixes++;
+              }
+            }
+
+            if (appliedFixes === 0) {
+              appendWarning(`review iteration ${iteration}: ${criticalIssues.length} critical issues found but no patches could be applied`);
+              break;
+            }
+
+            // Write fixed content back
+            await fs.writeFile(subjectMergedPath, fixedContent, 'utf8');
+
+            // Re-render HTML after fixes
+            const subjectName = db.getSubject?.(recording.subject_id)?.name || 'Конспект';
+            try {
+              await renderHtmlFromMarkdown({
+                mergedPath: subjectMergedPath,
+                htmlPath: subjectHtmlPath,
+                title: subjectName
+              });
+            } catch { /* non-critical — HTML can be regenerated later */ }
           }
         });
       }
