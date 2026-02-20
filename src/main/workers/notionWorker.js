@@ -634,9 +634,9 @@ function parseMermaidMindmap(text) {
     return i;
   }
 
-  // Top-level: root node with its children (depth=0 → allows 2 sub-levels)
+  // Top-level: root node with its children (depth=1 because root itself is nesting level 1)
   const rootBlock = makeBlock(nodes[0]);
-  const rootChildren = buildTree(0, nodes[0].level, 0);
+  const rootChildren = buildTree(0, nodes[0].level, 1);
   if (rootChildren.length > 0) {
     rootBlock.bulleted_list_item.children = rootChildren;
   }

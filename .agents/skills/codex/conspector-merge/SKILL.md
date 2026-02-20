@@ -1,70 +1,59 @@
 ---
 name: conspector-merge
-description: Merge structured markdown with a base note into a final merged markdown. Activate when the prompt contains both Structured markdown and Base note markdown.
+description: Merge structured markdown with a base note into a final exhaustive merged markdown. Activate when the prompt contains both Structured markdown and Base note markdown.
 ---
 
 Use this skill when the prompt asks to combine a structured note with a base note.
 
+## Core principle
+
+**The merged document must be MORE detailed than either input alone.** When merging new material into existing base, EXPAND — never compress. The result must be an exhaustive reference that replaces attending all lectures.
+
 ## Input expectations
 
-- `Structured markdown` block (generated from transcript).
-- `Base note markdown` block (possibly empty).
+- `Structured markdown` block (new material from transcript).
+- `Base note markdown` block (existing accumulated conspect, possibly empty).
 
 ## Output contract
 
 - Markdown only — no explanations outside the document.
 - Do not wrap output in a code fence.
 - Produce a final merged version in Russian.
+- **CRITICAL**: ALL facts and details from BOTH inputs must be preserved. Nothing from the base note should be lost or compressed.
+
+## Merge strategy
+
+1. **If Base note is empty**: Use Structured markdown as foundation, keeping full detail.
+2. **If Base note has content**: Read each section, EXPAND with new material. NEVER remove or shorten existing text.
+3. **Produce a single integrated document** — NOT separate "Лекция 1 / Лекция 2" sections.
 
 ## Visual formatting rules
 
-The merged output will be rendered as HTML. Use these features for visual richness:
-
 ### Mermaid diagrams
-Include at least one mermaid diagram. Wrap in triple-backtick fenced code block with `mermaid` language:
+Include at least one mermaid diagram:
 
-1. **Mindmap** at the start — overview of all lecture topics:
+1. **Mindmap** at start (overview of ALL topics, **max 2 levels of depth**):
 ```mermaid
 mindmap
-    root((Тема лекции))
+    root((Тема курса))
         Раздел 1
             Тезис 1.1
-            Тезис 1.2
         Раздел 2
             Тезис 2.1
 ```
 
-2. **Flowchart** for cause-effect or logical chains:
-```mermaid
-flowchart LR
-    A[Причина] --> B[Следствие]
-    B --> C[Вывод]
-```
+2. **Flowchart** for cause-effect chains.
+3. **Timeline** for chronological events.
 
-3. **Timeline** for chronological events (if applicable):
-```mermaid
-timeline
-    title Хронология
-    325 : Первый Вселенский Собор
-    381 : Второй Вселенский Собор
-```
-
-### Callout blocks
-Preserve and add `> [!NOTE]`, `> [!IMPORTANT]`, `> [!WARNING]` where appropriate:
-- Use `> [!IMPORTANT]` for key exam-worthy conclusions
-- Use `> [!NOTE]` for additional context or clarifications
-- Use `> [!TIP]` for study recommendations
-
-### Section separators
-Place `---` between major content sections.
-
-### Tables
-Use tables for structured comparisons, term glossaries, and event summaries.
+### Callout blocks, Tables, Section separators
+Use `> [!NOTE]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!TIP]`.
+Use tables for comparisons and glossaries.
+Use `---` between major sections.
 
 ## General rules
 
-- Preserve facts from both inputs.
-- Prefer explicit facts from base note when conflict is unresolved.
-- If conflict cannot be resolved, keep both variants and mark uncertainty.
-- Keep markdown compatible with standard parsers (headings, lists, quotes, tables, mermaid code blocks).
-- If base note is empty, use structured markdown as the foundation.
+- Single integrated conspect — no separate lecture sections.
+- EXPAND sections with new material — never compress.
+- Preserve ALL facts from BOTH inputs.
+- Prefer explicit facts from base note on conflict.
+- **NEVER reduce total content volume. Output ≥ base note size.**
