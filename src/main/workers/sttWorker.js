@@ -5,6 +5,7 @@ import { runGroqChunkedTranscription } from './sttGroqChunkedWorker.js';
 import { runWhisperCppTranscription } from './sttWhisperCppWorker.js';
 import { runAssemblyAiTranscription } from './sttAssemblyAiWorker.js';
 import { runDeepgramTranscription } from './sttDeepgramWorker.js';
+import { executeSttFallback } from '../utils/fallback.js';
 
 function buildMockTranscript(recording, language) {
   return {
@@ -62,7 +63,7 @@ function isEngineConfigured(engine, sttConfig) {
  * Build the ordered fallback chain from config.
  * Supports both legacy (primary+fallback) and new (fallbackChain) config.
  */
-function buildFallbackChain(sttConfig) {
+export function buildFallbackChain(sttConfig) {
   // New-style: explicit ordered chain
   if (Array.isArray(sttConfig.fallbackChain) && sttConfig.fallbackChain.length > 0) {
     return sttConfig.fallbackChain.filter((e) => KNOWN_ENGINES.includes(e));
@@ -168,58 +169,55 @@ export async function runSttDiarization(payload) {
   writeLog('meta', `fallback chain: [${chain.join(' → ')}]\n`);
   emitProgress(20, `stt_chain_start`);
 
-  const errors = [];
-  let fallbackWarnings = [];
-
   try {
-    for (let i = 0; i < chain.length; i++) {
-      const engine = chain[i];
+    let finalTranscript = null;
+    let fallbackWarnings = [];
 
-      // Check if engine is configured (has API key)
-      if (!isEngineConfigured(engine, sttConfig)) {
-        const skipMsg = `skipping ${engine}: not configured (no API key)`;
-        writeLog('meta', `${skipMsg}\n`);
-        fallbackWarnings.push(skipMsg);
-        continue;
-      }
+    await executeSttFallback(
+      chain,
+      async (engine) => {
+        // Runner: try one engine
+        if (!isEngineConfigured(engine, sttConfig)) {
+          const skipMsg = `skipping ${engine}: not configured (no API key)`;
+          writeLog('meta', `${skipMsg}\n`);
+          fallbackWarnings.push(skipMsg);
+          throw new Error('Not configured'); // trigger fallback
+        }
 
-      try {
-        emitProgress(20 + (i * 5), `stt_engine_${engine}_start`);
+        emitProgress(20, `stt_engine_${engine}_start`);
         const transcript = await executeEngine(engine);
 
-        // Validate result before accepting
+        // Validate result
         if (!Array.isArray(transcript?.segments) || transcript.segments.length === 0) {
           throw new ControlledError('STT_EMPTY_RESULT', `${engine} returned empty segments`);
         }
 
-        // Add warnings about fallbacks that were tried
         if (fallbackWarnings.length > 0) {
           transcript.warning = fallbackWarnings.join('; ');
         }
 
-        emitProgress(100, 'Транскрибация завершена');
-        return transcript;
-      } catch (engineError) {
-        const errorText = engineError instanceof Error ? engineError.message : String(engineError);
-        writeLog('meta', `engine=${engine} failed: ${errorText}\n`);
-        errors.push({ engine, error: errorText });
-
-        // CRITICAL: Clean up partial transcript file before trying next engine
-        await cleanupPartialTranscript(transcriptPath, writeLog);
-
-        const isLast = i === chain.length - 1;
-        if (!isLast) {
+        finalTranscript = transcript;
+      },
+      async (engine, error) => {
+        // onFallback: log and cleanup
+        const errorText = error.message;
+        if (errorText !== 'Not configured') {
+          writeLog('meta', `engine=${engine} failed: ${errorText}\n`);
           fallbackWarnings.push(`stt ${engine} failed, trying next: ${errorText}`);
-          emitProgress(20 + ((i + 1) * 5), `stt_fallback_after_${engine}`);
+          // CRITICAL: Clean up partial transcript file before trying next engine
+          await cleanupPartialTranscript(transcriptPath, writeLog);
         }
+        emitProgress(25, `stt_fallback_after_${engine}`);
       }
-    }
+    );
 
-    // All engines failed
-    const summary = errors.map((e) => `${e.engine}: ${e.error}`).join(' | ');
+    emitProgress(100, 'Транскрибация завершена');
+    return finalTranscript;
+  } catch (err) {
+    // executeSttFallback throws if ALL engines fail
     throw new ControlledError(
       'STT_ALL_ENGINES_FAILED',
-      `All STT engines failed: ${summary}. Chain: [${chain.join(' → ')}]. Лог: ${logPath}`
+      `${err.message}. Chain: [${chain.join(' → ')}]. Лог: ${logPath}`
     );
   } finally {
     await new Promise((resolve) => {

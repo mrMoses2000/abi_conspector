@@ -6,51 +6,7 @@ import { runSttDiarization } from '../workers/sttWorker.js';
 import { getStructureWorker, getMergeWorker, getMergeFromMarkdownWorker, getLlmConfigKey, buildLlmFallbackChain } from '../workers/llmProvider.js';
 import { renderEmergencyHtml, renderHtmlFromMarkdown } from '../workers/htmlWorker.js';
 import { writeMergedToNotion } from '../workers/notionWorker.js';
-
-/**
- * Execute an LLM stage with automatic fallback through the chain.
- * @param {Array<{provider: string; label: string; configKey: string; configOverrides: object}>} chain
- * @param {any} runtimeConfig
- * @param {(msg: string) => void} appendWarning
- * @param {string} stageName
- * @param {(provider: string, llmConfig: any) => Promise<void>} runner
- */
-async function executeWithLlmFallback(chain, runtimeConfig, appendWarning, stageName, runner) {
-  const errors = [];
-
-  for (let i = 0; i < chain.length; i++) {
-    const entry = chain[i];
-    const baseConfig = runtimeConfig[entry.configKey] || {};
-    const llmConfig = { ...baseConfig, ...entry.configOverrides };
-
-    try {
-      await runner(entry.provider, llmConfig);
-      if (errors.length > 0) {
-        appendWarning(`${stageName}: ${errors.map(e => e.label).join(', ')} failed → used ${entry.label}`);
-      }
-      return;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      errors.push({ label: entry.label, error: msg });
-
-      const isLast = i === chain.length - 1;
-      if (!isLast) {
-        continue; // Try next in chain
-      }
-
-      // All entries failed → try mock if allowed
-      if (runtimeConfig.resilience.codexFallbackToMock && llmConfig.mode === 'real') {
-        appendWarning(
-          `${stageName}: all LLM providers failed [${errors.map(e => `${e.label}: ${e.error}`).join('; ')}], fallback to mock`
-        );
-        await runner(entry.provider, { ...llmConfig, mode: 'mock' });
-        return;
-      }
-
-      throw error;
-    }
-  }
-}
+import { executeWithLlmFallback } from '../utils/fallback.js';
 
 /**
  * @param {{
