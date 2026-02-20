@@ -59,6 +59,10 @@ async function submitTranscription(uploadUrl, apiKey, language, onLog) {
         speech_models: ['universal-3-pro', 'universal-2']
     };
 
+    if (typeof onLog === 'function') {
+        onLog('stdout', `assemblyai submit request payload: ${JSON.stringify(body)}\n`);
+    }
+
     const response = await fetch(`${ASSEMBLYAI_BASE}/transcript`, {
         method: 'POST',
         headers: {
@@ -70,9 +74,12 @@ async function submitTranscription(uploadUrl, apiKey, language, onLog) {
 
     if (!response.ok) {
         const bodyText = await response.text();
+        if (typeof onLog === 'function') {
+            onLog('stderr', `assemblyai submit failed (${response.status}): ${bodyText}\n`);
+        }
         throw new ControlledError(
             'ASSEMBLYAI_SUBMIT_FAILED',
-            `AssemblyAI submit failed (${response.status}): ${bodyText.slice(0, 300)}`
+            `AssemblyAI submit failed (${response.status}): ${bodyText}`
         );
     }
 
