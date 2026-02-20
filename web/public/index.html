@@ -14,7 +14,61 @@
 
 <body>
   <main class="layout">
-    <section id="auth-card" class="card">
+    <!-- Welcome / About page -->
+    <section id="welcome-card" class="card welcome-card">
+      <div class="welcome-hero">
+        <h1 class="welcome-title">📝 ABI Conspector</h1>
+        <p class="welcome-tagline">Автоматическая система создания конспектов из аудиозаписей лекций</p>
+      </div>
+
+      <div class="welcome-features">
+        <div class="feature-card">
+          <div class="feature-icon">🎙️</div>
+          <h3>Транскрипция</h3>
+          <p>Загрузите аудиозапись лекции — система автоматически распознает речь с помощью Groq и AssemblyAI</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🤖</div>
+          <h3>AI-обработка</h3>
+          <p>Google Gemini структурирует текст в полноценный конспект с тезисами, терминами и mind-map</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📓</div>
+          <h3>Notion</h3>
+          <p>Готовый конспект автоматически публикуется в Notion с правильным форматированием</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📚</div>
+          <h3>Библиотека</h3>
+          <p>Все конспекты по предметам собраны в красивой HTML-библиотеке с навигацией</p>
+        </div>
+      </div>
+
+      <div class="welcome-team">
+        <h2>Разработчики</h2>
+        <div class="team-members">
+          <div class="team-card">
+            <div class="team-avatar">МВ</div>
+            <div class="team-info">
+              <strong>Василенко Моисей</strong>
+              <span>Архитектура, backend, AI pipeline</span>
+            </div>
+          </div>
+          <div class="team-card">
+            <div class="team-avatar">ШТ</div>
+            <div class="team-info">
+              <strong>Турсуметов Шерзатбек</strong>
+              <span>Тестирование, доработка</span>
+            </div>
+          </div>
+        </div>
+        <p class="team-group">Христианское Руководство · 13 набор</p>
+      </div>
+
+      <button id="welcome-start-btn" class="btn primary welcome-start-btn" type="button">Войти в систему →</button>
+    </section>
+
+    <section id="auth-card" class="card hidden">
       <h1>ABI Conspector</h1>
       <p class="muted">Вход и регистрация. Все пользователи видят общий список готовых конспектов.</p>
       <div class="tabs">
@@ -52,7 +106,7 @@
     <section id="app-card" class="card hidden">
       <div class="header">
         <div>
-          <h2>Загрузка и обработка</h2>
+          <h2 id="app-title">Конспекты</h2>
           <p id="user-line" class="muted"></p>
         </div>
         <div class="actions">
@@ -62,52 +116,55 @@
         </div>
       </div>
 
-      <!-- Subject selector -->
-      <div id="subject-selector" class="subject-selector">
-        <label class="subject-select-label">
-          Предмет
-          <select id="subject-select" class="subject-select">
-            <option value="" disabled selected>— выберите предмет —</option>
-          </select>
-        </label>
-        <label class="subject-select-label">
-          LLM модель
-          <select id="llm-model-select" class="subject-select">
-            <option value="auto" selected>🤖 Авто (pro → flash → codex)</option>
-            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-            <option value="gemini-3-pro-preview">Gemini 3 Pro (preview)</option>
-            <option value="gemini-3-flash-preview">Gemini 3 Flash (preview)</option>
-            <option value="codex-low">Codex CLI (low)</option>
-            <option value="codex-medium">Codex CLI (medium)</option>
-            <option value="codex-high">Codex CLI (high)</option>
-          </select>
-        </label>
-        <button id="create-subject-btn" class="btn secondary" type="button">+ Новый предмет</button>
-      </div>
-
-      <!-- Upload dropzone (hidden until subject selected) -->
-      <div id="upload-zone" class="upload-zone hidden">
-        <div class="upload-zone-content">
-          <div class="upload-icon">🎙️</div>
-          <p class="upload-text">Перетащите аудио файл сюда</p>
-          <p class="upload-hint">или</p>
-          <label class="btn secondary upload-pick-btn">
-            Выбрать файл
-            <input id="upload-input" type="file"
-              accept="audio/*,video/*,.mp3,.wav,.ogg,.m4a,.flac,.aac,.webm,.mp4,.opus" hidden />
+      <!-- Admin-only: subject selector + upload (hidden for regular users) -->
+      <div id="admin-upload-panel">
+        <!-- Subject selector -->
+        <div id="subject-selector" class="subject-selector">
+          <label class="subject-select-label">
+            Предмет
+            <select id="subject-select" class="subject-select">
+              <option value="" disabled selected>— выберите предмет —</option>
+            </select>
           </label>
-          <p class="upload-formats">MP3, WAV, OGG, M4A, FLAC, WEBM, MP4, OPUS</p>
+          <label class="subject-select-label">
+            LLM модель
+            <select id="llm-model-select" class="subject-select">
+              <option value="auto" selected>🤖 Авто (pro → flash → codex)</option>
+              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              <option value="gemini-3-pro-preview">Gemini 3 Pro (preview)</option>
+              <option value="gemini-3-flash-preview">Gemini 3 Flash (preview)</option>
+              <option value="codex-low">Codex CLI (low)</option>
+              <option value="codex-medium">Codex CLI (medium)</option>
+              <option value="codex-high">Codex CLI (high)</option>
+            </select>
+          </label>
+          <button id="create-subject-btn" class="btn secondary" type="button">+ Новый предмет</button>
         </div>
-        <div id="upload-progress" class="upload-progress hidden">
-          <div class="upload-progress-info">
-            <span id="upload-file-name"></span>
-            <span id="upload-percent">0%</span>
+
+        <!-- Upload dropzone -->
+        <div id="upload-zone" class="upload-zone hidden">
+          <div class="upload-zone-content">
+            <div class="upload-icon">🎙️</div>
+            <p class="upload-text">Перетащите аудио файл сюда</p>
+            <p class="upload-hint">или</p>
+            <label class="btn secondary upload-pick-btn">
+              Выбрать файл
+              <input id="upload-input" type="file"
+                accept="audio/*,video/*,.mp3,.wav,.ogg,.m4a,.flac,.aac,.webm,.mp4,.opus" hidden />
+            </label>
+            <p class="upload-formats">MP3, WAV, OGG, M4A, FLAC, WEBM, MP4, OPUS</p>
           </div>
-          <div class="upload-progress-track">
-            <div id="upload-progress-bar" class="upload-progress-fill"></div>
+          <div id="upload-progress" class="upload-progress hidden">
+            <div class="upload-progress-info">
+              <span id="upload-file-name"></span>
+              <span id="upload-percent">0%</span>
+            </div>
+            <div class="upload-progress-track">
+              <div id="upload-progress-bar" class="upload-progress-fill"></div>
+            </div>
+            <div id="upload-status-text" class="upload-status-text">Загрузка...</div>
           </div>
-          <div id="upload-status-text" class="upload-status-text">Загрузка...</div>
         </div>
       </div>
 

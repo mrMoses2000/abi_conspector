@@ -10,6 +10,7 @@ const state = {
 
 const refs = {
   authCard: document.getElementById('auth-card'),
+  welcomeCard: document.getElementById('welcome-card'),
   appCard: document.getElementById('app-card'),
   adminCard: document.getElementById('admin-card'),
   tabLogin: document.getElementById('tab-login'),
@@ -40,6 +41,8 @@ const refs = {
   // Subject selector
   subjectSelect: document.getElementById('subject-select'),
   createSubjectBtn: document.getElementById('create-subject-btn'),
+  adminUploadPanel: document.getElementById('admin-upload-panel'),
+  appTitle: document.getElementById('app-title'),
   // Library
   libraryCard: document.getElementById('library-card'),
   libraryBtn: document.getElementById('library-btn'),
@@ -63,19 +66,26 @@ function setLoginTab(activeLogin) {
 }
 
 function showAuthScreen() {
+  refs.welcomeCard.classList.add('hidden');
   refs.authCard.classList.remove('hidden');
   refs.appCard.classList.add('hidden');
   refs.adminCard.classList.add('hidden');
 }
 
 function showAppScreen() {
+  refs.welcomeCard.classList.add('hidden');
   refs.authCard.classList.add('hidden');
   refs.appCard.classList.remove('hidden');
   refs.libraryCard.classList.add('hidden');
-  if (state.user?.role === 'admin') {
+  const isAdmin = state.user?.role === 'admin';
+  if (isAdmin) {
     refs.adminCard.classList.remove('hidden');
+    refs.adminUploadPanel.classList.remove('hidden');
+    refs.appTitle.textContent = 'Загрузка и обработка';
   } else {
     refs.adminCard.classList.add('hidden');
+    refs.adminUploadPanel.classList.add('hidden');
+    refs.appTitle.textContent = 'Конспекты';
   }
 }
 
@@ -386,12 +396,16 @@ async function loadHealth() {
 }
 
 function updateUserLine() {
-  const parts = [`${state.user?.email || '-'}`, `role=${state.user?.role || '-'}`];
-  if (state.health) {
-    parts.push(`platform=${state.health.platform}`);
-    parts.push(`notion=${state.health.notionMode}`);
+  if (state.user?.role === 'admin') {
+    const parts = [`${state.user?.email || '-'}`, `role=${state.user?.role || '-'}`];
+    if (state.health) {
+      parts.push(`platform=${state.health.platform}`);
+      parts.push(`notion=${state.health.notionMode}`);
+    }
+    refs.userLine.textContent = parts.join(' | ');
+  } else {
+    refs.userLine.textContent = state.user?.email || '';
   }
-  refs.userLine.textContent = parts.join(' | ');
 }
 
 async function loadConspects() {
@@ -499,6 +513,7 @@ async function handleLogout(silent = false) {
   }
 }
 
+document.getElementById('welcome-start-btn').addEventListener('click', () => showAuthScreen());
 refs.tabLogin.addEventListener('click', () => setLoginTab(true));
 refs.tabRegister.addEventListener('click', () => setLoginTab(false));
 

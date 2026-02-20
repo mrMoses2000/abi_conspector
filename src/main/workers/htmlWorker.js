@@ -166,6 +166,7 @@ export async function renderHtmlFromMarkdown(payload) {
       margin-bottom: 28px; padding-bottom: 20px;
       border-bottom: 1px solid var(--panel-border);
       position: relative;
+      display: flex; justify-content: space-between; align-items: flex-start;
     }
     .hero::after {
       content: ''; position: absolute; bottom: -1px; left: 0; right: 0; height: 1px;
@@ -188,6 +189,15 @@ export async function renderHtmlFromMarkdown(payload) {
       border-radius: 20px; font-size: 12px; color: var(--accent-light);
       letter-spacing: 0.04em;
     }
+    .back-btn {
+      flex-shrink: 0; margin-left: 16px; margin-top: 6px;
+      padding: 8px 18px; border-radius: 8px;
+      background: var(--panel); border: 1px solid var(--panel-border);
+      color: var(--text-secondary); font-size: 14px; cursor: pointer;
+      backdrop-filter: blur(8px); transition: all 0.2s;
+      text-decoration: none; white-space: nowrap;
+    }
+    .back-btn:hover { color: var(--accent-light); border-color: var(--accent); }
 
     /* ─── TOC ─── */
     .toc {
@@ -355,6 +365,7 @@ export async function renderHtmlFromMarkdown(payload) {
       .toc { display: none; }
       article { box-shadow: none; border: none; background: #fff; backdrop-filter: none; padding: 0; }
       .hero-title { -webkit-text-fill-color: #1e293b; background: none; }
+      .back-btn { display: none; }
       article h2 { border-left-color: #1e293b; }
       .callout { border-color: #64748b; background: #f8fafc; }
       article pre { background: #f1f5f9; color: #1e293b; }
@@ -373,8 +384,11 @@ export async function renderHtmlFromMarkdown(payload) {
 <body>
   <main class="page">
     <header class="hero">
-      <h1 class="hero-title">${escapeHtml(payload.title)}</h1>
-      <p class="hero-sub">Сгенерировано ABI Conspector</p>
+      <div>
+        <h1 class="hero-title">${escapeHtml(payload.title)}</h1>
+        <p class="hero-sub">Сгенерировано ABI Conspector</p>
+      </div>
+      <button class="back-btn" onclick="window.close()">← Закрыть</button>
     </header>
     ${toc}
     <article>${rendered}</article>

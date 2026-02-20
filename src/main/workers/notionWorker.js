@@ -534,6 +534,72 @@ export function notionBlocksToMarkdown(blocks) {
  * Supports headings, bullet/numbered lists, quote, code fences, paragraph.
  * @param {string} md
  */
+/**
+ * Parse mermaid mindmap syntax into Notion bulleted list blocks.
+ * Supports: root((text)), (text), ("text"), plain text nodes.
+ */
+function parseMermaidMindmap(text) {
+  const lines = text.split('\n');
+  const blocks = [];
+
+  for (const line of lines) {
+    // Skip 'mindmap' keyword and empty lines
+    const trimmed = line.trimEnd();
+    if (!trimmed || /^\s*mindmap\s*$/i.test(trimmed)) continue;
+
+    // Extract node text from various formats
+    let nodeText = null;
+
+    // root((text)) or ((text))
+    const rootMatch = trimmed.match(/\(\((.+?)\)\)/);
+    if (rootMatch) {
+      nodeText = rootMatch[1];
+      blocks.push({
+        object: 'block',
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [{ type: 'text', text: { content: nodeText }, annotations: { bold: true } }]
+        }
+      });
+      continue;
+    }
+
+    // ("text") — quoted node
+    const quotedMatch = trimmed.match(/\("(.+?)"\)/);
+    if (quotedMatch) {
+      nodeText = quotedMatch[1];
+    }
+
+    // (text) — parenthesized node (not quoted)
+    if (!nodeText) {
+      const parenMatch = trimmed.match(/\(([^"()]+)\)/);
+      if (parenMatch) {
+        nodeText = parenMatch[1].trim();
+      }
+    }
+
+    // Plain text node (indented, no parens) — e.g. "  Analysis"
+    if (!nodeText) {
+      const plainMatch = trimmed.match(/^\s{2,}(\S.+)/);
+      if (plainMatch) {
+        nodeText = plainMatch[1];
+      }
+    }
+
+    if (nodeText) {
+      blocks.push({
+        object: 'block',
+        type: 'bulleted_list_item',
+        bulleted_list_item: {
+          rich_text: [{ type: 'text', text: { content: nodeText } }]
+        }
+      });
+    }
+  }
+
+  return blocks;
+}
+
 export function markdownToNotionBlocks(md) {
   const lines = md.replaceAll('\r\n', '\n').split('\n');
   const blocks = [];
@@ -580,8 +646,26 @@ export function markdownToNotionBlocks(md) {
     if (!text) {
       return;
     }
-    // Mermaid blocks: Notion can't render them, show a callout instead
+    // Mermaid blocks: Notion can't render them natively
     if (codeLang.toLowerCase() === 'mermaid') {
+      // Try to parse mindmap into bulleted list
+      if (text.match(/^\s*mindmap/i)) {
+        const mmBlocks = parseMermaidMindmap(text);
+        if (mmBlocks.length > 0) {
+          // Add a small header for the mindmap
+          blocks.push({
+            object: 'block',
+            type: 'callout',
+            callout: {
+              icon: { type: 'emoji', emoji: '🧠' },
+              rich_text: [{ type: 'text', text: { content: 'Карта тем (mind map)' }, annotations: { bold: true } }]
+            }
+          });
+          blocks.push(...mmBlocks);
+          return;
+        }
+      }
+      // Fallback for non-mindmap mermaid (flowchart, sequence, etc.)
       blocks.push({
         object: 'block',
         type: 'callout',
@@ -754,6 +838,17 @@ export function markdownToNotionBlocks(md) {
     if (h3) {
       flushParagraph();
       blocks.push({ object: 'block', type: 'heading_3', heading_3: { rich_text: parseInlineMarkdown(h3[1]) } });
+      continue;
+    }
+
+    // h4+ headings (####, #####, ######) → heading_3 with bold (Notion max is 3 levels)
+    const h4plus = line.match(/^#{4,6}\s+(.+)/);
+    if (h4plus) {
+      flushParagraph();
+      blocks.push({
+        object: 'block', type: 'heading_3',
+        heading_3: { rich_text: [{ type: 'text', text: { content: h4plus[1] }, annotations: { bold: true } }] }
+      });
       continue;
     }
 
