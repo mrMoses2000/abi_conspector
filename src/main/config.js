@@ -56,8 +56,16 @@ export function getRuntimeConfig() {
   const geminiMode = process.env.CONSPECTOR_GEMINI_MODE === 'mock' ? 'mock' : 'real';
   const llmProvider = parseEnum(process.env.CONSPECTOR_LLM_PROVIDER, ['codex', 'gemini'], 'codex');
   const notionMode = process.env.CONSPECTOR_NOTION_MODE === 'real' ? 'real' : 'off';
-  const sttPrimary = parseEnum(process.env.CONSPECTOR_STT_PRIMARY, ['groq', 'whispercpp'], 'groq');
-  const sttFallback = parseEnum(process.env.CONSPECTOR_STT_FALLBACK, ['whispercpp', 'none'], 'whispercpp');
+  const sttPrimary = parseEnum(
+    process.env.CONSPECTOR_STT_PRIMARY,
+    ['groq', 'assemblyai', 'deepgram', 'whispercpp'],
+    'groq'
+  );
+  const sttFallback = parseEnum(
+    process.env.CONSPECTOR_STT_FALLBACK,
+    ['groq', 'assemblyai', 'deepgram', 'whispercpp', 'none'],
+    'assemblyai'
+  );
 
   // Parse fallback chain: comma-separated list of engines in priority order
   const rawChain = (process.env.CONSPECTOR_STT_FALLBACK_CHAIN || '').trim();
@@ -80,11 +88,17 @@ export function getRuntimeConfig() {
       language: process.env.CONSPECTOR_STT_LANGUAGE || 'ru',
       timeoutMs: parseIntSafe(process.env.CONSPECTOR_STT_TIMEOUT_SEC, 1800) * 1000,
       groqApiKey: process.env.CONSPECTOR_GROQ_API_KEY || process.env.GROQ_API_KEY || '',
-      groqModel: process.env.CONSPECTOR_GROQ_MODEL || 'whisper-large-v3',
+      groqModel: process.env.CONSPECTOR_GROQ_MODEL || 'whisper-large-v3-turbo',
       groqMaxFileMb: parseIntSafe(process.env.CONSPECTOR_GROQ_MAX_FILE_MB, 25),
       groqChunkMinutes: parseIntSafe(process.env.CONSPECTOR_GROQ_CHUNK_MIN, 18),
-      assemblyaiApiKey: process.env.ASSEMBLYAI_API_KEY || '',
-      deepgramApiKey: process.env.DEEPGRAM_API_KEY || '',
+      assemblyaiApiKey:
+        process.env.CONSPECTOR_ASSEMBLYAI_KEY ||
+        process.env.ASSEMBLYAI_API_KEY ||
+        '',
+      deepgramApiKey:
+        process.env.CONSPECTOR_DEEPGRAM_KEY ||
+        process.env.DEEPGRAM_API_KEY ||
+        '',
       deepgramModel: process.env.CONSPECTOR_DEEPGRAM_MODEL || 'nova-2',
       whisperCppBin: process.env.CONSPECTOR_WHISPERCPP_BIN || 'whisper-cli',
       whisperCppModelPath:
