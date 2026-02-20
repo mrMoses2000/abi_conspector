@@ -111,6 +111,10 @@ async function runCodex(config, outputPath, prompt) {
   }
 }
 
+function getCodexSkillPath(workdir, skillName) {
+  return path.join(workdir, '.agents', 'skills', 'codex', skillName, 'SKILL.md');
+}
+
 /**
  * @param {{
  *   structuredMarkdown: string;
@@ -130,7 +134,8 @@ async function runCodex(config, outputPath, prompt) {
  */
 export async function runCodexMergeFromMarkdown(payload) {
   const { structuredMarkdown, baseMarkdown, outputPath, recording, codexConfig } = payload;
-  const prompt = `Ты редактор учебного материала.\n\nЗадача: сделать полную merged-версию конспекта в markdown на русском языке.\n\nТребования:\n- Верни только markdown.\n- Создай единый, цельный, интегрированный конспект — НЕ разбивай на отдельные "Лекция 1 / Лекция 2".\n- Если базовый конспект пустой, используй структурированный материал как основу.\n- Если базовый конспект есть, интегрируй новый материал в существующую структуру: дополняй разделы, добавляй детали, объединяй пересекающиеся темы.\n- Не добавляй метаданные (recording_id, имена файлов, даты).\n- Сохрани совместимость с импортом в Notion (обычные заголовки/списки/таблицы/цитаты).\n- Добавь раздел \"Схема\" с mermaid-блоком.\n- Mermaid: каждый узел пиши только как ID[\"Текст\"] или ID{\"Текст\"} (текст в двойных кавычках обязателен).\n- Mermaid: для подписей рёбер используй только синтаксис с пайпами: -->|Текст|.\n\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\``;
+  const skillPath = getCodexSkillPath(codexConfig.workdir, 'conspector-merge');
+  const prompt = `$conspector-merge\nPath: ${skillPath}\n\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\``;
 
   await runCodex(codexConfig, outputPath, prompt);
 }
@@ -155,7 +160,8 @@ export async function runCodexStructure(payload) {
   const { transcriptPath, structuredPath, recording, codexConfig } = payload;
   const transcriptJson = await readText(transcriptPath);
 
-  const prompt = `Ты редактор академического конспекта.\n\nЗадача: преобразуй diarized transcript в качественный русский markdown-конспект.\n\nПравила:\n- Пиши строго markdown и без пояснений вне результата.\n- Пиши как прилежный студент, ведущий непрерывные естественные записи — без технических заголовков и метаданных.\n- Сохраняй факты из транскрипта, не выдумывай новые.\n- Используй структуру: \"Ключевые тезисы\", \"Термины\", \"Примеры\", \"Вопросы к экзамену\", \"TODO\".\n- Если в транскрипте есть неоднозначности, добавь блок \"Открытые вопросы\".\n\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\``;
+  const skillPath = getCodexSkillPath(codexConfig.workdir, 'conspector-structure');
+  const prompt = `$conspector-structure\nPath: ${skillPath}\n\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\``;
 
   await runCodex(codexConfig, structuredPath, prompt);
 }

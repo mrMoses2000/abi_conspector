@@ -55,7 +55,8 @@ async function submitTranscription(uploadUrl, apiKey, language, onLog) {
         audio_url: uploadUrl,
         language_code: language || 'ru',
         punctuate: true,
-        format_text: true
+        format_text: true,
+        speech_models: ['universal-3-pro']
     };
 
     const response = await fetch(`${ASSEMBLYAI_BASE}/transcript`, {

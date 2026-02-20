@@ -121,6 +121,10 @@ async function runGemini(config, outputPath, prompt) {
     await fs.writeFile(outputPath, output, 'utf8');
 }
 
+function getGeminiSkillPath(workdir, skillName) {
+    return path.join(workdir, '.agents', 'skills', 'gemini', `${skillName}.txt`);
+}
+
 /**
  * @param {{
  *   structuredMarkdown: string;
@@ -139,7 +143,10 @@ async function runGemini(config, outputPath, prompt) {
  */
 export async function runGeminiMergeFromMarkdown(payload) {
     const { structuredMarkdown, baseMarkdown, outputPath, recording, geminiConfig } = payload;
-    const prompt = `Ты редактор учебного материала.\n\nЗадача: сделать полную merged-версию конспекта в markdown на русском языке.\n\nТребования:\n- Верни только markdown.\n- Создай единый, цельный, интегрированный конспект — НЕ разбивай на отдельные "Лекция 1 / Лекция 2".\n- Если базовый конспект пустой, используй структурированный материал как основу.\n- Если базовый конспект есть, интегрируй новый материал в существующую структуру: дополняй разделы, добавляй детали, объединяй пересекающиеся темы.\n- Не добавляй метаданные (recording_id, имена файлов, даты).\n- Сохрани совместимость с импортом в Notion (обычные заголовки/списки/таблицы/цитаты).\n- Добавь раздел \"Схема\" с mermaid-блоком.\n- Mermaid: каждый узел пиши только как ID[\"Текст\"] или ID{\"Текст\"} (текст в двойных кавычках обязателен).\n- Mermaid: для подписей рёбер используй только синтаксис с пайпами: -->|Текст|.\n\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\``;
+    const skillPath = getGeminiSkillPath(geminiConfig.workdir, 'conspector-merge');
+    const skillContent = await readText(skillPath).catch(() => '');
+
+    const prompt = `<system_instructions>\n${skillContent}\n</system_instructions>\n\n<context>\nStructured markdown:\n\n\`\`\`md\n${structuredMarkdown}\n\`\`\`\n\nBase note markdown:\n\n\`\`\`md\n${baseMarkdown || '# (пусто)'}\n\`\`\`\n</context>\n\n<task>\nВыполни задачу по интеграции базы знаний согласно системным инструкциям.\n</task>`;
 
     await runGemini(geminiConfig, outputPath, prompt);
 }
@@ -163,7 +170,10 @@ export async function runGeminiStructure(payload) {
     const { transcriptPath, structuredPath, recording, geminiConfig } = payload;
     const transcriptJson = await readText(transcriptPath);
 
-    const prompt = `Ты редактор академического конспекта.\n\nЗадача: преобразуй diarized transcript в качественный русский markdown-конспект.\n\nПравила:\n- Пиши строго markdown и без пояснений вне результата.\n- Пиши как прилежный студент, ведущий непрерывные естественные записи — без технических заголовков и метаданных.\n- Сохраняй факты из транскрипта, не выдумывай новые.\n- Используй структуру: \"Ключевые тезисы\", \"Термины\", \"Примеры\", \"Вопросы к экзамену\", \"TODO\".\n- Если в транскрипте есть неоднозначности, добавь блок \"Открытые вопросы\".\n\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\``;
+    const skillPath = getGeminiSkillPath(geminiConfig.workdir, 'conspector-structure');
+    const skillContent = await readText(skillPath).catch(() => '');
+
+    const prompt = `<system_instructions>\n${skillContent}\n</system_instructions>\n\n<context>\nTranscript JSON:\n\n\`\`\`json\n${transcriptJson}\n\`\`\`\n</context>\n\n<task>\nПреобразуй транскрипт в конспект согласно системным инструкциям.\n</task>`;
 
     await runGemini(geminiConfig, structuredPath, prompt);
 }
