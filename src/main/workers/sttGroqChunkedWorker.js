@@ -50,15 +50,47 @@ function toSegmentsFromVerboseJson(payload, offsetSec = 0) {
   return segments;
 }
 
+/**
+ * Parse the number of seconds to wait from Groq 429 retry-after header or body.
+ * Groq sends: Retry-After: 312 (seconds) or a date string.
+ */
+function parseRetryAfterSec(response, bodyText) {
+  // 1. Try Retry-After header (seconds or HTTP-date)
+  const headerVal = response.headers.get('retry-after') || response.headers.get('x-ratelimit-reset-requests');
+  if (headerVal) {
+    const parsed = Number(headerVal);
+    if (Number.isFinite(parsed) && parsed > 0) return Math.ceil(parsed);
+    const date = new Date(headerVal);
+    if (!Number.isNaN(date.getTime())) {
+      const diffSec = Math.ceil((date.getTime() - Date.now()) / 1000);
+      if (diffSec > 0) return diffSec;
+    }
+  }
+
+  // 2. Try body: "Please try again in 5m12.5s" or "try again in 312s"
+  const bodyMatch = bodyText.match(/try again in (?:(\d+)m)?(\d+(?:\.\d+)?)s/i);
+  if (bodyMatch) {
+    const minutes = Number(bodyMatch[1] || 0);
+    const seconds = Number(bodyMatch[2] || 0);
+    return Math.ceil(minutes * 60 + seconds) + 2; // +2s buffer
+  }
+
+  return null;
+}
+
 async function transcribeSingleFileViaGroq({ filePath, apiKey, language, model, onLog }) {
   const maxRetries = 3;
   const baseDelaySec = 15;
+  // Max wait time we are willing to spend on a single 429 retry (10 minutes).
+  // Beyond this it's faster to fall through to AssemblyAI fallback.
+  const MAX_RETRY_WAIT_SEC = 600;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const form = new FormData();
     form.set('model', model);
     form.set('language', language || 'ru');
-    form.set('response_format', 'text');
+    form.set('response_format', 'verbose_json');
+    form.set('timestamp_granularities[]', 'segment');
     const fileBlob = await openAsBlob(filePath);
     form.set('file', fileBlob, path.basename(filePath));
 
@@ -77,9 +109,25 @@ async function transcribeSingleFileViaGroq({ filePath, apiKey, language, model, 
 
     // Retry on rate limit
     if (response.status === 429 && attempt < maxRetries) {
-      const delaySec = baseDelaySec * Math.pow(2, attempt);
+      const retryAfterSec = parseRetryAfterSec(response, bodyText);
+      const delaySec = retryAfterSec !== null ? retryAfterSec : baseDelaySec * Math.pow(2, attempt);
+
+      if (delaySec > MAX_RETRY_WAIT_SEC) {
+        // Wait too long — throw and let the STT pipeline fall back to AssemblyAI
+        if (typeof onLog === 'function') {
+          onLog('stderr', `groq 429 rate limit wait too long (${delaySec}s > ${MAX_RETRY_WAIT_SEC}s), giving up\n`);
+        }
+        throw new ControlledError(
+          'GROQ_STT_FAILED',
+          `Groq STT failed with status 429: ${bodyText.slice(0, 280)}`
+        );
+      }
+
       if (typeof onLog === 'function') {
-        onLog('stdout', `groq 429 rate limit, retrying in ${delaySec}s (attempt ${attempt + 1}/${maxRetries})\n`);
+        onLog(
+          'stdout',
+          `groq 429 rate limit, retrying in ${delaySec}s (attempt ${attempt + 1}/${maxRetries}, retry-after=${retryAfterSec ?? 'estimated'})\n`
+        );
       }
       await new Promise((resolve) => setTimeout(resolve, delaySec * 1000));
       continue;
@@ -92,7 +140,15 @@ async function transcribeSingleFileViaGroq({ filePath, apiKey, language, model, 
       );
     }
 
-    return bodyText.trim();
+    // Parse verbose_json to extract text
+    try {
+      const parsed = JSON.parse(bodyText);
+      // Return the parsed object so caller can use segments if available
+      return parsed;
+    } catch {
+      // Fallback: return raw text (shouldn't happen with verbose_json)
+      return bodyText.trim();
+    }
   }
 
   throw new ControlledError('GROQ_STT_FAILED', 'Groq STT failed after max retries (rate limited)');
@@ -175,15 +231,20 @@ export async function runGroqChunkedTranscription(payload) {
     if (typeof onProgress === 'function') {
       onProgress({ percent: 30, message: 'groq_upload_single' });
     }
-    const text = await transcribeSingleFileViaGroq({
+    const result = await transcribeSingleFileViaGroq({
       filePath: inputPath,
       apiKey: groqApiKey,
       language: sttConfig.language || 'ru',
       model: groqModel,
       onLog
     });
-    if (text) {
-      allSegments.push({ startSec: 0, endSec: 1, speakerId: 'SPEAKER_1', text });
+    if (result && typeof result === 'object') {
+      // verbose_json response — use segments with timestamps
+      const segs = toSegmentsFromVerboseJson(result, 0);
+      allSegments.push(...segs);
+    } else if (result) {
+      // plain text fallback
+      allSegments.push({ startSec: 0, endSec: 1, speakerId: 'SPEAKER_1', text: String(result) });
     }
   } else {
     const probe = await probeAudio(inputPath);
@@ -234,15 +295,20 @@ export async function runGroqChunkedTranscription(payload) {
           onProgress({ percent: before, message: `groq_chunk_${index + 1}_upload` });
         }
 
-        const text = await transcribeSingleFileViaGroq({
+        const chunkResult = await transcribeSingleFileViaGroq({
           filePath: chunkPath,
           apiKey: groqApiKey,
           language: sttConfig.language || 'ru',
           model: groqModel,
           onLog
         });
-        if (text) {
-          allSegments.push({ startSec, endSec: startSec + spanSec, speakerId: 'SPEAKER_1', text });
+        if (chunkResult && typeof chunkResult === 'object') {
+          // verbose_json — use real segment timestamps offset by chunk start
+          const segs = toSegmentsFromVerboseJson(chunkResult, startSec);
+          allSegments.push(...segs);
+        } else if (chunkResult) {
+          // plain text fallback
+          allSegments.push({ startSec, endSec: startSec + spanSec, speakerId: 'SPEAKER_1', text: String(chunkResult) });
         }
 
         if (typeof onProgress === 'function') {
