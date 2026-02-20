@@ -150,7 +150,7 @@ export async function renderHtmlFromMarkdown(payload) {
         radial-gradient(ellipse 50% 40% at 85% 5%, rgba(59,130,246,0.08) 0%, transparent 55%);
       -webkit-font-smoothing: antialiased;
     }
-    .page { max-width: 860px; margin: 0 auto; padding: 32px 20px 64px; position: relative; }
+    .page { max-width: 920px; margin: 0 auto; padding: 32px 20px 64px; position: relative; }
 
     /* ─── Hero ─── */
     .hero { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--panel-border); }

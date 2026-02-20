@@ -14,12 +14,12 @@ Use this skill when the prompt asks to transform transcript JSON into a readable
 
 - Markdown only.
 - Recommended sections:
-  - `Краткое summary`
+  - `Краткое содержание`
   - `Ключевые тезисы`
   - `Термины`
   - `Примеры`
   - `Вопросы к экзамену`
-  - `TODO`
+  - `Задания / Доработать`
   - `Открытые вопросы` (only if needed)
 
 ## Rules

@@ -716,23 +716,11 @@ tbody tr:nth-child(even):hover {
   color: var(--danger);
 }
 
-/* ─── Viewer ─── */
-.viewer-card {
-  min-height: 80vh;
-}
-
+/* ─── Viewer (library content area) ─── */
 .viewer-content {
   margin-top: 16px;
-  min-height: 75vh;
+  min-height: 200px;
   position: relative;
-}
-
-.viewer-iframe {
-  width: 100%;
-  min-height: 75vh;
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-sm);
-  background: #fff;
 }
 
 /* ─── Responsive ─── */

@@ -542,6 +542,22 @@ export function markdownToNotionBlocks(md) {
   let codeLang = '';
   let codeBuffer = [];
 
+  // Callout state
+  let inCallout = false;
+  let calloutIcon = '💡';
+  let calloutBuffer = [];
+
+  // Table state
+  let tableRows = [];
+
+  const CALLOUT_ICONS = {
+    NOTE: '💡',
+    TIP: '✅',
+    IMPORTANT: '⚡',
+    WARNING: '⚠️',
+    CAUTION: '🔴'
+  };
+
   const flushParagraph = () => {
     if (paragraphBuffer.length === 0) {
       return;
@@ -574,9 +590,70 @@ export function markdownToNotionBlocks(md) {
     });
   };
 
+  const flushCallout = () => {
+    if (calloutBuffer.length === 0) {
+      return;
+    }
+    const text = calloutBuffer.join('\n').trim();
+    calloutBuffer = [];
+    inCallout = false;
+    if (!text) {
+      return;
+    }
+    blocks.push({
+      object: 'block',
+      type: 'callout',
+      callout: {
+        icon: { type: 'emoji', emoji: calloutIcon },
+        rich_text: parseInlineMarkdown(text)
+      }
+    });
+  };
+
+  const flushTable = () => {
+    if (tableRows.length === 0) {
+      return;
+    }
+    // Determine column count from widest row
+    const colCount = Math.max(...tableRows.map(r => r.length));
+    const children = tableRows.map(row => ({
+      object: 'block',
+      type: 'table_row',
+      table_row: {
+        cells: Array.from({ length: colCount }, (_, i) => {
+          const cell = (row[i] || '').trim();
+          return parseInlineMarkdown(cell);
+        })
+      }
+    }));
+    blocks.push({
+      object: 'block',
+      type: 'table',
+      table: {
+        table_width: colCount,
+        has_column_header: true,
+        has_row_header: false,
+        children
+      }
+    });
+    tableRows = [];
+  };
+
+  const isTableSeparator = (line) => /^\|[\s:|-]+\|$/.test(line.trim());
+  const isTableRow = (line) => {
+    const trimmed = line.trim();
+    return trimmed.startsWith('|') && trimmed.endsWith('|') && trimmed.length > 2;
+  };
+  const parseTableRow = (line) => {
+    const trimmed = line.trim();
+    // Remove leading/trailing pipes, split by |
+    return trimmed.slice(1, -1).split('|').map(cell => cell.trim());
+  };
+
   for (const rawLine of lines) {
     const line = rawLine.trimEnd();
 
+    // Code fence
     if (line.startsWith('```')) {
       if (inCode) {
         flushCode();
@@ -584,6 +661,8 @@ export function markdownToNotionBlocks(md) {
         codeLang = '';
       } else {
         flushParagraph();
+        flushCallout();
+        flushTable();
         inCode = true;
         codeLang = line.slice(3).trim();
       }
@@ -593,6 +672,51 @@ export function markdownToNotionBlocks(md) {
     if (inCode) {
       codeBuffer.push(rawLine);
       continue;
+    }
+
+    // Table rows: collect consecutive | ... | lines
+    if (isTableRow(line)) {
+      if (isTableSeparator(line)) {
+        // Skip separator row (|:---|:---|)
+        continue;
+      }
+      if (tableRows.length === 0) {
+        flushParagraph();
+        flushCallout();
+      }
+      tableRows.push(parseTableRow(line));
+      continue;
+    } else if (tableRows.length > 0) {
+      flushTable();
+    }
+
+    // GitHub-style callout: > [!NOTE], > [!TIP], etc.
+    const calloutStart = line.match(/^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]/i);
+    if (calloutStart) {
+      flushParagraph();
+      flushCallout(); // flush any previous callout
+      inCallout = true;
+      calloutIcon = CALLOUT_ICONS[calloutStart[1].toUpperCase()] || '💡';
+      // Check if there's text after the tag on the same line
+      const afterTag = line.replace(/^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*/i, '').trim();
+      if (afterTag) {
+        calloutBuffer.push(afterTag);
+      }
+      continue;
+    }
+
+    // Continue callout: lines starting with >
+    if (inCallout && line.match(/^>\s?/)) {
+      const content = line.replace(/^>\s?/, '').trim();
+      if (content) {
+        calloutBuffer.push(content);
+      }
+      continue;
+    }
+
+    // End callout on non-> line
+    if (inCallout) {
+      flushCallout();
     }
 
     if (!line.trim()) {
@@ -662,6 +786,8 @@ export function markdownToNotionBlocks(md) {
   }
 
   flushParagraph();
+  flushCallout();
+  flushTable();
   if (inCode) {
     flushCode();
   }

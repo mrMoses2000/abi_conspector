@@ -40,12 +40,6 @@ const refs = {
   // Subject selector
   subjectSelect: document.getElementById('subject-select'),
   createSubjectBtn: document.getElementById('create-subject-btn'),
-  // Viewer
-  viewerCard: document.getElementById('viewer-card'),
-  viewerTitle: document.getElementById('viewer-title'),
-  viewerBack: document.getElementById('viewer-back'),
-  viewerDownloadMd: document.getElementById('viewer-download-md'),
-  viewerContent: document.getElementById('viewer-content'),
   // Library
   libraryCard: document.getElementById('library-card'),
   libraryBtn: document.getElementById('library-btn'),
@@ -77,7 +71,6 @@ function showAuthScreen() {
 function showAppScreen() {
   refs.authCard.classList.add('hidden');
   refs.appCard.classList.remove('hidden');
-  refs.viewerCard.classList.add('hidden');
   refs.libraryCard.classList.add('hidden');
   if (state.user?.role === 'admin') {
     refs.adminCard.classList.remove('hidden');
@@ -86,30 +79,11 @@ function showAppScreen() {
   }
 }
 
-function showViewerScreen(title, recordingId) {
-  refs.appCard.classList.add('hidden');
-  refs.adminCard.classList.add('hidden');
-  refs.libraryCard.classList.add('hidden');
-  refs.viewerCard.classList.remove('hidden');
-  refs.viewerTitle.textContent = title || 'Конспект';
-  refs.viewerContent.textContent = 'Загрузка...';
-  state.viewingRecordingId = recordingId;
-  loadConspectHtml(recordingId);
-}
-
 function showLibraryScreen() {
   refs.appCard.classList.add('hidden');
   refs.adminCard.classList.add('hidden');
-  refs.viewerCard.classList.add('hidden');
   refs.libraryCard.classList.remove('hidden');
   populateLibraryDropdown();
-}
-
-function showAppFromViewer() {
-  refs.viewerCard.classList.add('hidden');
-  refs.viewerContent.textContent = '';
-  state.viewingRecordingId = null;
-  showAppScreen();
 }
 
 function formatDuration(seconds) {
@@ -320,7 +294,7 @@ function renderConspects(items) {
       viewBtn.style.padding = '6px 10px';
       viewBtn.textContent = 'Просмотр';
       viewBtn.addEventListener('click', () => {
-        showViewerScreen(item.fileName || item.recordingId, item.recordingId);
+        openConspectInNewTab(item.recordingId);
       });
       actionsCell.appendChild(viewBtn);
 
@@ -812,42 +786,21 @@ refs.uploadInput.addEventListener('change', () => {
 
 // ─── Viewer logic ───
 
-async function loadConspectHtml(recordingId) {
+async function openConspectInNewTab(recordingId) {
   try {
+    setStatus(refs.appStatus, `Открываю конспект ${recordingId}...`);
     const html = await apiRequest(`/api/conspects/${encodeURIComponent(recordingId)}/html`, {
       responseType: 'text'
     });
-    refs.viewerContent.textContent = '';
-    const iframe = document.createElement('iframe');
-    iframe.className = 'viewer-iframe';
-    iframe.sandbox = 'allow-same-origin';
-    iframe.srcdoc = html;
-    refs.viewerContent.appendChild(iframe);
+    const blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 120_000);
+    setStatus(refs.appStatus, `Конспект открыт в новой вкладке`);
   } catch (error) {
-    refs.viewerContent.textContent = `Ошибка загрузки конспекта: ${error.message}`;
+    setStatus(refs.appStatus, `Ошибка загрузки конспекта: ${error.message}`, true);
   }
 }
-
-refs.viewerBack.addEventListener('click', () => {
-  showAppFromViewer();
-});
-
-refs.viewerDownloadMd.addEventListener('click', async () => {
-  if (!state.viewingRecordingId) return;
-  try {
-    const blob = await apiRequest(`/api/conspects/${encodeURIComponent(state.viewingRecordingId)}/md`, {
-      responseType: 'blob'
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${state.viewingRecordingId}.md`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 10_000);
-  } catch (error) {
-    setStatus(refs.appStatus, `Ошибка скачивания MD: ${error.message}`, true);
-  }
-});
 
 // ─── Subject management ───
 
@@ -928,11 +881,22 @@ async function loadSubjectConspect(subjectId) {
       responseType: 'text'
     });
     refs.libraryContent.textContent = '';
-    const iframe = document.createElement('iframe');
-    iframe.className = 'viewer-iframe';
-    iframe.sandbox = 'allow-same-origin';
-    iframe.srcdoc = html;
-    refs.libraryContent.appendChild(iframe);
+    // Show a button to open full-page HTML in new tab
+    const openBtn = document.createElement('button');
+    openBtn.className = 'btn primary';
+    openBtn.textContent = '📖 Открыть конспект на полную страницу';
+    openBtn.style.margin = '20px auto';
+    openBtn.style.display = 'block';
+    openBtn.style.fontSize = '16px';
+    openBtn.style.padding = '14px 28px';
+    const htmlBlob = new Blob([html], { type: 'text/html; charset=utf-8' });
+    const htmlUrl = URL.createObjectURL(htmlBlob);
+    openBtn.addEventListener('click', () => {
+      window.open(htmlUrl, '_blank');
+    });
+    refs.libraryContent.appendChild(openBtn);
+    // Also auto-open on first load
+    window.open(htmlUrl, '_blank');
     return;
   } catch (_htmlError) {
     // HTML not available — try MD fallback
