@@ -168,11 +168,11 @@ export async function renderHtmlFromMarkdown(payload) {
       --h3-border: rgba(99,102,241,0.08);
     }
 
-    /* ─── Light Theme ─── */
+    /* ─── Light Reading Theme ─── */
     html[data-theme="light"] {
       --bg: #fafaf9;
       --bg-subtle: #f5f5f4;
-      --panel: rgba(255, 255, 255, 0.92);
+      --panel: rgba(255, 255, 255, 0.95);
       --panel-border: rgba(0, 0, 0, 0.08);
       --text: #1e293b;
       --text-secondary: #64748b;
@@ -195,8 +195,7 @@ export async function renderHtmlFromMarkdown(payload) {
       --mermaid-bg: rgba(248,250,252,0.8);
       --shadow: 0 4px 20px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
       --callout-shadow: 0 1px 8px rgba(0,0,0,0.06);
-      --bg-gradient: radial-gradient(ellipse 80% 50% at 15% -10%, rgba(79,70,229,0.04) 0%, transparent 60%),
-        radial-gradient(ellipse 50% 40% at 85% 5%, rgba(59,130,246,0.03) 0%, transparent 55%);
+      --bg-gradient: none;
       --hero-gradient: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #818cf8 100%);
       --mark-bg: rgba(251,191,36,0.2);
       --selection-bg: rgba(79,70,229,0.2);
@@ -209,6 +208,52 @@ export async function renderHtmlFromMarkdown(payload) {
       --caution-bg: rgba(220,38,38,0.06);
       --link-hover: #4338ca;
       --h3-border: rgba(0,0,0,0.06);
+      --reader-font: 'Merriweather', Georgia, serif;
+      --reader-size: 18px;
+    }
+
+    /* ─── Dark Reading Theme (true black) ─── */
+    html[data-theme="dark"] {
+      --bg: #0a0a0a;
+      --bg-subtle: #141414;
+      --panel: rgba(20, 20, 20, 0.95);
+      --panel-border: rgba(255, 255, 255, 0.08);
+      --text: #d4d4d4;
+      --text-secondary: #a3a3a3;
+      --heading-color: #fafafa;
+      --accent: #818cf8;
+      --accent-light: #a5b4fc;
+      --accent-bg: rgba(129, 140, 248, 0.06);
+      --green: #4ade80;
+      --amber: #fbbf24;
+      --red: #fb7185;
+      --code-bg: rgba(255,255,255,0.06);
+      --code-color: #c4b5fd;
+      --pre-bg: #111111;
+      --pre-border: rgba(255,255,255,0.06);
+      --table-border: rgba(255,255,255,0.08);
+      --table-header-bg: rgba(255,255,255,0.04);
+      --table-stripe: rgba(255,255,255,0.02);
+      --table-hover: rgba(255,255,255,0.04);
+      --blockquote-color: #a3a3a3;
+      --mermaid-bg: rgba(20,20,20,0.8);
+      --shadow: 0 4px 20px rgba(0,0,0,0.5);
+      --callout-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      --bg-gradient: none;
+      --hero-gradient: linear-gradient(135deg, #e0e7ff 0%, #a5b4fc 50%, #818cf8 100%);
+      --mark-bg: rgba(251,191,36,0.15);
+      --selection-bg: rgba(129,140,248,0.3);
+      --selection-color: #fafafa;
+      --note-bg: rgba(96,165,250,0.08);
+      --note-title: #93c5fd;
+      --tip-bg: rgba(74,222,128,0.08);
+      --important-bg: rgba(129,140,248,0.08);
+      --warning-bg: rgba(251,191,36,0.08);
+      --caution-bg: rgba(251,113,133,0.08);
+      --link-hover: #c4b5fd;
+      --h3-border: rgba(255,255,255,0.06);
+      --reader-font: 'Merriweather', Georgia, serif;
+      --reader-size: 18px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -223,7 +268,12 @@ export async function renderHtmlFromMarkdown(payload) {
       -webkit-font-smoothing: antialiased;
       transition: background 0.35s ease, color 0.35s ease;
     }
-    .page { max-width: 75ch; margin: 0 auto; padding: 32px 20px 64px; position: relative; }
+    /* Reading mode font override */
+    html[data-theme] body {
+      font-family: var(--reader-font, 'Inter', sans-serif);
+      font-size: var(--reader-size, 16px);
+    }
+    .page { max-width: 920px; margin: 0 auto; padding: 32px 20px 64px; position: relative; }
 
     /* ─── Scroll fade-in ─── */
     .fade-in {
@@ -266,10 +316,8 @@ export async function renderHtmlFromMarkdown(payload) {
 
     /* ─── TOC ─── */
     .toc {
-      position: sticky; top: 24px; float: right; width: 220px; margin-left: 32px; margin-bottom: 16px;
       background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius);
-      padding: 16px; backdrop-filter: blur(12px); font-size: 13px; max-height: calc(100vh - 48px); overflow-y: auto;
-      scrollbar-width: thin; scrollbar-color: var(--accent) transparent;
+      padding: 16px; font-size: 13px; margin-bottom: 24px;
       transition: background 0.35s ease;
     }
     .toc-title { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent-light); margin-bottom: 10px; }
@@ -370,7 +418,7 @@ export async function renderHtmlFromMarkdown(payload) {
     /* ─── Tables ─── */
     article .table-scroll { overflow-x: auto; margin: 16px 0; -webkit-overflow-scrolling: touch; }
     article table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 0; }
-    article th, article td { border: 1px solid var(--table-border); padding: 10px 12px; text-align: left; overflow-wrap: break-word; word-break: break-word; }
+    article th, article td { border: 1px solid var(--table-border); padding: 10px 12px; text-align: left; overflow-wrap: break-word; }
     article th { background: var(--table-header-bg); color: var(--accent-light); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
     article tr:nth-child(even) { background: var(--table-stripe); }
     article tr:hover { background: var(--table-hover); }
@@ -463,7 +511,7 @@ export async function renderHtmlFromMarkdown(payload) {
         <p class="hero-sub">Сгенерировано ABI Conspector</p>
       </div>
       <div class="hero-actions">
-        <button id="theme-toggle" class="hero-btn" title="Сменить тему">☀️</button>
+        <button id="theme-toggle" class="hero-btn" title="Сменить тему">🌙</button>
         <button class="hero-btn" onclick="window.close()">← Закрыть</button>
       </div>
     </header>
@@ -474,21 +522,35 @@ export async function renderHtmlFromMarkdown(payload) {
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
 
     // ─── Theme Toggle ───
-    const isLight = () => document.documentElement.getAttribute('data-theme') === 'light';
+    // 3 modes: default (blue) → dark (black) → light (cream)
+    const THEMES = ['', 'dark', 'light'];
+    const THEME_ICONS = ['🌙', '☀️', '💻'];
+    const THEME_TITLES = ['Тёмный режим', 'Светлый режим', 'Основной режим'];
     const themeBtn = document.getElementById('theme-toggle');
-    themeBtn.textContent = isLight() ? '🌙' : '☀️';
+
+    function getCurrentThemeIdx() {
+      const t = document.documentElement.getAttribute('data-theme') || '';
+      const idx = THEMES.indexOf(t);
+      return idx >= 0 ? idx : 0;
+    }
+    function applyThemeUI() {
+      const idx = getCurrentThemeIdx();
+      themeBtn.textContent = THEME_ICONS[idx];
+      themeBtn.title = THEME_TITLES[idx];
+    }
+    applyThemeUI();
 
     function getMermaidTheme() {
-      return isLight()
-        ? { theme: 'default', themeVariables: { background: '#fafaf9', primaryColor: '#4f46e5', primaryTextColor: '#1e293b', lineColor: '#94a3b8' } }
-        : { theme: 'dark', themeVariables: { darkMode: true, background: '#0f172a', primaryColor: '#6366f1', primaryTextColor: '#e2e8f0', lineColor: '#475569' } };
+      const t = document.documentElement.getAttribute('data-theme') || '';
+      if (t === 'light') return { theme: 'default', themeVariables: { background: '#fafaf9', primaryColor: '#4f46e5', primaryTextColor: '#1e293b', lineColor: '#94a3b8' } };
+      if (t === 'dark') return { theme: 'dark', themeVariables: { darkMode: true, background: '#0a0a0a', primaryColor: '#818cf8', primaryTextColor: '#d4d4d4', lineColor: '#525252' } };
+      return { theme: 'dark', themeVariables: { darkMode: true, background: '#0f172a', primaryColor: '#6366f1', primaryTextColor: '#e2e8f0', lineColor: '#475569' } };
     }
 
     mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', ...getMermaidTheme() });
 
-    // Wrap each .mermaid in a zoom/pan container, then render
+    // Save mermaid source before rendering
     document.querySelectorAll('.mermaid, pre code.language-mermaid').forEach(el => {
-      // Unwrap <pre><code> if needed
       const mermaidEl = el.tagName === 'CODE' ? el.parentElement : el;
       if (mermaidEl.tagName === 'PRE') {
         const div = document.createElement('div');
@@ -499,6 +561,8 @@ export async function renderHtmlFromMarkdown(payload) {
       } else {
         el = mermaidEl;
       }
+      // Save original source for theme re-render
+      el.setAttribute('data-source', el.textContent);
 
       const wrap = document.createElement('div');
       wrap.className = 'mermaid-wrap';
@@ -584,22 +648,24 @@ export async function renderHtmlFromMarkdown(payload) {
 
     // ─── Theme toggle handler ───
     themeBtn.addEventListener('click', async () => {
-      const newTheme = isLight() ? '' : 'light';
-      if (newTheme) {
-        document.documentElement.setAttribute('data-theme', 'light');
-        localStorage.setItem('abi-reader-theme', 'light');
+      const nextIdx = (getCurrentThemeIdx() + 1) % THEMES.length;
+      const nextTheme = THEMES[nextIdx];
+      if (nextTheme) {
+        document.documentElement.setAttribute('data-theme', nextTheme);
+        localStorage.setItem('abi-reader-theme', nextTheme);
       } else {
         document.documentElement.removeAttribute('data-theme');
         localStorage.removeItem('abi-reader-theme');
       }
-      themeBtn.textContent = isLight() ? '🌙' : '☀️';
+      applyThemeUI();
 
-      // Re-render mermaid with new theme
+      // Re-render mermaid from saved source
       mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', ...getMermaidTheme() });
-      document.querySelectorAll('.mermaid[data-processed]').forEach(el => {
+      document.querySelectorAll('.mermaid[data-source]').forEach(el => {
+        el.textContent = el.getAttribute('data-source');
         el.removeAttribute('data-processed');
       });
-      try { await mermaid.run(); } catch (_) { /* ignore re-render errors */ }
+      try { await mermaid.run(); } catch (_) { /* ignore */ }
     });
   </script>
 </body>
