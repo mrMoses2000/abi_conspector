@@ -621,13 +621,8 @@ run_setup_all() {
   run_fix_env_paths "silent"
   echo "[6/9] .env paths auto-fixed."
 
-  # 7. Gemini skills
-  if [[ -x "$ROOT_DIR/scripts/setup-gemini-skills.sh" ]]; then
-    bash "$ROOT_DIR/scripts/setup-gemini-skills.sh"
-    echo "[7/9] Gemini CLI skills ready."
-  else
-    echo "[7/9] Gemini skills setup skipped (script not found)."
-  fi
+  # 7. Gemini skills (migrated to Git, no setup required)
+  echo "[7/9] Agent-specific skills are tracked in Git."
 
   # 8. Env doctor
   echo "[8/9] Running env doctor..."
@@ -855,13 +850,6 @@ run_ubuntu_web_stack() {
   echo "Ubuntu web stack is up."
 }
 
-run_setup_gemini() {
-  if [[ ! -x "$ROOT_DIR/scripts/setup-gemini-skills.sh" ]]; then
-    echo "Error: scripts/setup-gemini-skills.sh not found or not executable."
-    exit 1
-  fi
-  bash "$ROOT_DIR/scripts/setup-gemini-skills.sh"
-}
 
 run_stop_web() {
   echo "Stopping ABI Conspector..."
@@ -959,7 +947,7 @@ run_interactive() {
       7) run_desktop_real ;;
       8) run_web ;;
       9) run_tests ;;
-      10) run_setup_gemini ;;
+
       11) run_setup_all ;;
       12) run_stop_web ;;
       13) run_status_web ;;
@@ -1014,7 +1002,7 @@ case "${1:-}" in
   --status-web) run_status_web ;;
   --test) run_tests ;;
   --ubuntu-web-stack) run_ubuntu_web_stack ;;
-  --setup-gemini) run_setup_gemini ;;
+
   --setup-all) run_setup_all ;;
   --help|-h) print_help ;;
   *)

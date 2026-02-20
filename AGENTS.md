@@ -83,15 +83,14 @@ Web mode:
 
 Gemini CLI skills & context:
 - `.gemini/GEMINI.md` — project context auto-loaded by Gemini CLI
-- `.gemini/skills/conspector-structure/SKILL.md`
-- `.gemini/skills/conspector-merge/SKILL.md`
+- `.agents/skills/gemini/conspector-structure.txt`
+- `.agents/skills/gemini/conspector-merge.txt`
 
 Ops / tooling:
 - `run.sh`
 - `scripts/bootstrap.sh`
 - `scripts/preflight.js`
 - `scripts/env-doctor.js`
-- `scripts/setup-gemini-skills.sh`
 
 ## 4) How to Validate Project Quickly
 
@@ -161,17 +160,14 @@ CONSPECTOR_GEMINI_MODEL=gemini-3-flash-preview
 ### Gemini CLI Setup
 
 ```bash
-# First-time setup (idempotent, safe to re-run):
-./scripts/setup-gemini-skills.sh
-
-# Or via run.sh:
-./run.sh --setup-gemini
+# Skills are now tracked via Git in .agents/skills/gemini.
+# Just ensure you have the required CLI tool installed and authenticated.
 ```
 
-This creates/updates:
+This uses:
 - `.gemini/GEMINI.md` — project context (always loaded by Gemini CLI)
-- `.gemini/skills/conspector-structure/SKILL.md` — transcript → note skill
-- `.gemini/skills/conspector-merge/SKILL.md` — note merge skill
+- `.agents/skills/gemini/conspector-structure.txt` — transcript → note skill
+- `.agents/skills/gemini/conspector-merge.txt` — note merge skill
 
 ### Gemini CLI Non-Interactive Mode
 
@@ -200,9 +196,10 @@ No API key env variable is needed.
 
 ## 9) Local Skills (for note generation prompts)
 
-Skills exist in two locations:
-- `.agents/skills/*/SKILL.md` — for Codex CLI
-- `.gemini/skills/*/SKILL.md` — for Gemini CLI
+Skills exist in three locations based on the agent:
+- `.agents/skills/codex/*/SKILL.md` — for Codex CLI
+- `.agents/skills/gemini/*.txt` — for Gemini CLI
+- `.agents/skills/claude/*.xml` — for Claude CLI
 
 Use:
 - `conspector-structure` when prompt includes transcript-to-note transformation.

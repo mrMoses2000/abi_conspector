@@ -90,9 +90,7 @@
 1. Установите Gemini CLI (`npm install -g @anthropic-ai/gemini-cli` или другой метод).
 2. Пройдите OAuth авторизацию: `gemini auth login`.
 3. Настройки хранятся в `~/.gemini/settings.json`. API-ключ в `.env` **не нужен**.
-4. Запустите настройку skills:
-   - `./run.sh --setup-gemini`
-   - или: `./scripts/setup-gemini-skills.sh`
+4. Настройки skills загружаются автоматически из `.agents/skills/gemini`.
 5. В `.env`:
    - `CONSPECTOR_LLM_PROVIDER=gemini`
    - `CONSPECTOR_GEMINI_MODE=real`

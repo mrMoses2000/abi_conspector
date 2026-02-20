@@ -380,23 +380,6 @@ function main() {
         suggestion: `CONSPECTOR_GEMINI_WORKDIR=${rootDir}`,
         autofix: rootDir
       });
-    } else {
-      if (!fs.existsSync(path.join(workdir, '.gemini', 'GEMINI.md'))) {
-        issues.push({
-          level: 'warn',
-          key: 'CONSPECTOR_GEMINI_WORKDIR',
-          message: `.gemini/GEMINI.md not found in ${workdir} — run ./scripts/setup-gemini-skills.sh`,
-          suggestion: `CONSPECTOR_GEMINI_WORKDIR=${rootDir}`
-        });
-      }
-      if (!fs.existsSync(path.join(workdir, '.gemini', 'skills'))) {
-        issues.push({
-          level: 'warn',
-          key: 'CONSPECTOR_GEMINI_WORKDIR',
-          message: `.gemini/skills not found in ${workdir} — run ./scripts/setup-gemini-skills.sh`,
-          suggestion: `CONSPECTOR_GEMINI_WORKDIR=${rootDir}`
-        });
-      }
     }
   }
 
