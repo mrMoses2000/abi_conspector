@@ -777,6 +777,19 @@ tbody tr:nth-child(even):hover {
 .feature-icon {
   font-size: 28px;
   margin-bottom: 8px;
+  color: var(--accent);
+}
+
+.feature-icon svg {
+  width: 32px;
+  height: 32px;
+  stroke-width: 1.5;
+}
+
+.btn svg,
+.btn i {
+  vertical-align: middle;
+  display: inline;
 }
 
 .feature-card h3 {

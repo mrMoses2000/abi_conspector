@@ -123,6 +123,7 @@ export async function renderHtmlFromMarkdown(payload) {
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@400;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
+    /* ─── Dark Theme (default) ─── */
     :root {
       --bg: #0f172a;
       --bg-subtle: #1e293b;
@@ -130,6 +131,7 @@ export async function renderHtmlFromMarkdown(payload) {
       --panel-border: rgba(99, 102, 241, 0.1);
       --text: #e2e8f0;
       --text-secondary: #94a3b8;
+      --heading-color: #f1f5f9;
       --accent: #6366f1;
       --accent-light: #818cf8;
       --accent-bg: rgba(99, 102, 241, 0.08);
@@ -137,7 +139,78 @@ export async function renderHtmlFromMarkdown(payload) {
       --amber: #fbbf24;
       --red: #f87171;
       --radius: 14px;
+      --code-bg: rgba(99,102,241,0.1);
+      --code-color: #c7d2fe;
+      --pre-bg: #020617;
+      --pre-border: rgba(99,102,241,0.1);
+      --table-border: rgba(99,102,241,0.12);
+      --table-header-bg: rgba(99,102,241,0.08);
+      --table-stripe: rgba(15,23,42,0.4);
+      --table-hover: rgba(99,102,241,0.06);
+      --blockquote-color: #cbd5e1;
+      --mermaid-bg: rgba(15,23,42,0.6);
+      --shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
+      --callout-shadow: 0 2px 12px rgba(0,0,0,0.15);
+      --bg-gradient: radial-gradient(ellipse 80% 50% at 15% -10%, rgba(99,102,241,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 85% 5%, rgba(59,130,246,0.1) 0%, transparent 55%),
+        radial-gradient(ellipse 40% 30% at 50% 100%, rgba(99,102,241,0.06) 0%, transparent 50%);
+      --hero-gradient: linear-gradient(135deg, #e0e7ff 0%, #818cf8 50%, #6366f1 100%);
+      --mark-bg: rgba(251,191,36,0.15);
+      --selection-bg: rgba(99,102,241,0.3);
+      --selection-color: #f1f5f9;
+      --note-bg: rgba(96,165,250,0.08);
+      --note-title: #93bbfc;
+      --tip-bg: rgba(52,211,153,0.08);
+      --important-bg: rgba(99,102,241,0.1);
+      --warning-bg: rgba(251,191,36,0.08);
+      --caution-bg: rgba(248,113,113,0.08);
+      --link-hover: #c7d2fe;
+      --h3-border: rgba(99,102,241,0.08);
     }
+
+    /* ─── Light Theme ─── */
+    html[data-theme="light"] {
+      --bg: #fafaf9;
+      --bg-subtle: #f5f5f4;
+      --panel: rgba(255, 255, 255, 0.92);
+      --panel-border: rgba(0, 0, 0, 0.08);
+      --text: #1e293b;
+      --text-secondary: #64748b;
+      --heading-color: #0f172a;
+      --accent: #4f46e5;
+      --accent-light: #6366f1;
+      --accent-bg: rgba(79, 70, 229, 0.06);
+      --green: #059669;
+      --amber: #d97706;
+      --red: #dc2626;
+      --code-bg: rgba(79,70,229,0.08);
+      --code-color: #4338ca;
+      --pre-bg: #f8fafc;
+      --pre-border: rgba(0,0,0,0.08);
+      --table-border: rgba(0,0,0,0.08);
+      --table-header-bg: rgba(79,70,229,0.06);
+      --table-stripe: rgba(0,0,0,0.02);
+      --table-hover: rgba(79,70,229,0.04);
+      --blockquote-color: #475569;
+      --mermaid-bg: rgba(248,250,252,0.8);
+      --shadow: 0 4px 20px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+      --callout-shadow: 0 1px 8px rgba(0,0,0,0.06);
+      --bg-gradient: radial-gradient(ellipse 80% 50% at 15% -10%, rgba(79,70,229,0.04) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 85% 5%, rgba(59,130,246,0.03) 0%, transparent 55%);
+      --hero-gradient: linear-gradient(135deg, #4338ca 0%, #6366f1 50%, #818cf8 100%);
+      --mark-bg: rgba(251,191,36,0.2);
+      --selection-bg: rgba(79,70,229,0.2);
+      --selection-color: #0f172a;
+      --note-bg: rgba(59,130,246,0.06);
+      --note-title: #2563eb;
+      --tip-bg: rgba(5,150,105,0.06);
+      --important-bg: rgba(79,70,229,0.06);
+      --warning-bg: rgba(217,119,6,0.06);
+      --caution-bg: rgba(220,38,38,0.06);
+      --link-hover: #4338ca;
+      --h3-border: rgba(0,0,0,0.06);
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
     body {
@@ -146,13 +219,11 @@ export async function renderHtmlFromMarkdown(payload) {
       font-size: 16px;
       line-height: 1.72;
       background: var(--bg);
-      background-image:
-        radial-gradient(ellipse 80% 50% at 15% -10%, rgba(99,102,241,0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 50% 40% at 85% 5%, rgba(59,130,246,0.1) 0%, transparent 55%),
-        radial-gradient(ellipse 40% 30% at 50% 100%, rgba(99,102,241,0.06) 0%, transparent 50%);
+      background-image: var(--bg-gradient);
       -webkit-font-smoothing: antialiased;
+      transition: background 0.35s ease, color 0.35s ease;
     }
-    .page { max-width: 920px; margin: 0 auto; padding: 32px 20px 64px; position: relative; }
+    .page { max-width: 75ch; margin: 0 auto; padding: 32px 20px 64px; position: relative; }
 
     /* ─── Scroll fade-in ─── */
     .fade-in {
@@ -177,27 +248,21 @@ export async function renderHtmlFromMarkdown(payload) {
       font-family: 'Merriweather', Georgia, serif;
       font-size: 34px; font-weight: 700;
       letter-spacing: -0.02em;
-      background: linear-gradient(135deg, #e0e7ff 0%, #818cf8 50%, #6366f1 100%);
+      background: var(--hero-gradient);
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       background-clip: text;
       line-height: 1.3;
     }
     .hero-sub { margin-top: 8px; color: var(--text-secondary); font-size: 14px; letter-spacing: 0.02em; }
-    .hero-badge {
-      display: inline-block; margin-top: 10px; padding: 4px 12px;
-      background: var(--accent-bg); border: 1px solid var(--panel-border);
-      border-radius: 20px; font-size: 12px; color: var(--accent-light);
-      letter-spacing: 0.04em;
-    }
-    .back-btn {
-      flex-shrink: 0; margin-left: 16px; margin-top: 6px;
-      padding: 8px 18px; border-radius: 8px;
+    .hero-actions { display: flex; gap: 8px; flex-shrink: 0; margin-left: 16px; margin-top: 6px; }
+    .hero-btn {
+      padding: 8px 14px; border-radius: 8px;
       background: var(--panel); border: 1px solid var(--panel-border);
       color: var(--text-secondary); font-size: 14px; cursor: pointer;
       backdrop-filter: blur(8px); transition: all 0.2s;
       text-decoration: none; white-space: nowrap;
     }
-    .back-btn:hover { color: var(--accent-light); border-color: var(--accent); }
+    .hero-btn:hover { color: var(--accent-light); border-color: var(--accent); }
 
     /* ─── TOC ─── */
     .toc {
@@ -205,6 +270,7 @@ export async function renderHtmlFromMarkdown(payload) {
       background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius);
       padding: 16px; backdrop-filter: blur(12px); font-size: 13px; max-height: calc(100vh - 48px); overflow-y: auto;
       scrollbar-width: thin; scrollbar-color: var(--accent) transparent;
+      transition: background 0.35s ease;
     }
     .toc-title { font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent-light); margin-bottom: 10px; }
     .toc ul { list-style: none; }
@@ -218,13 +284,14 @@ export async function renderHtmlFromMarkdown(payload) {
     article {
       background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius);
       padding: 32px; backdrop-filter: blur(12px);
-      box-shadow: 0 8px 32px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
+      box-shadow: var(--shadow);
+      transition: background 0.35s ease, box-shadow 0.35s ease;
     }
 
     /* ─── Headings ─── */
     article h1, article h2, article h3 {
       font-family: 'Merriweather', Georgia, serif;
-      letter-spacing: -0.01em; color: #f1f5f9;
+      letter-spacing: -0.01em; color: var(--heading-color);
     }
     article h2 {
       margin-top: 40px; padding-top: 24px; padding-left: 16px;
@@ -240,25 +307,26 @@ export async function renderHtmlFromMarkdown(payload) {
     article h3 {
       margin-top: 28px; font-size: 18px; color: var(--accent-light);
       padding-bottom: 6px;
-      border-bottom: 1px solid rgba(99,102,241,0.08);
+      border-bottom: 1px solid var(--h3-border);
     }
 
     /* ─── Text ─── */
     article p, article li { line-height: 1.72; margin-bottom: 8px; }
     article ul, article ol { padding-left: 24px; margin-bottom: 12px; }
     article li::marker { color: var(--accent-light); }
-    article strong { color: #f1f5f9; }
+    article strong { color: var(--heading-color); }
     article em { color: var(--text-secondary); }
-    article mark, article .highlight { background: rgba(251,191,36,0.15); color: var(--amber); padding: 1px 5px; border-radius: 4px; }
+    article mark, article .highlight { background: var(--mark-bg); color: var(--amber); padding: 1px 5px; border-radius: 4px; }
     article a { color: var(--accent-light); text-decoration: underline; text-underline-offset: 3px; }
-    article a:hover { color: #c7d2fe; }
+    article a:hover { color: var(--link-hover); }
 
     /* ─── Blockquotes ─── */
     article blockquote {
       margin: 16px 0; padding: 14px 18px;
       border-left: 3px solid var(--accent);
       background: var(--accent-bg); border-radius: 0 var(--radius) var(--radius) 0;
-      color: #cbd5e1; font-style: italic;
+      color: var(--blockquote-color); font-style: italic;
+      transition: background 0.35s ease;
     }
     article blockquote p { margin-bottom: 4px; }
 
@@ -267,50 +335,52 @@ export async function renderHtmlFromMarkdown(payload) {
       margin: 20px 0; padding: 16px 20px; border-radius: var(--radius);
       border-left: 3px solid; position: relative;
       backdrop-filter: blur(8px);
-      box-shadow: 0 2px 12px rgba(0,0,0,0.15);
-      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: var(--callout-shadow);
+      transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.35s ease;
     }
     .callout:hover { transform: translateX(4px); box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
     .callout-title { font-weight: 600; font-size: 14px; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
     .callout-body { font-size: 15px; }
     .callout-body p { margin-bottom: 4px; }
-    .callout-note { border-color: #60a5fa; background: rgba(96,165,250,0.08); }
-    .callout-note .callout-title { color: #93bbfc; }
+    .callout-note { border-color: #60a5fa; background: var(--note-bg); }
+    .callout-note .callout-title { color: var(--note-title); }
     .callout-note .callout-title::before { content: '💡'; }
-    .callout-tip { border-color: var(--green); background: rgba(52,211,153,0.08); }
+    .callout-tip { border-color: var(--green); background: var(--tip-bg); }
     .callout-tip .callout-title { color: var(--green); }
     .callout-tip .callout-title::before { content: '✅'; }
-    .callout-important { border-color: var(--accent); background: rgba(99,102,241,0.1); }
+    .callout-important { border-color: var(--accent); background: var(--important-bg); }
     .callout-important .callout-title { color: var(--accent-light); }
     .callout-important .callout-title::before { content: '⚡'; }
-    .callout-warning { border-color: var(--amber); background: rgba(251,191,36,0.08); }
+    .callout-warning { border-color: var(--amber); background: var(--warning-bg); }
     .callout-warning .callout-title { color: var(--amber); }
     .callout-warning .callout-title::before { content: '⚠️'; }
-    .callout-caution { border-color: var(--red); background: rgba(248,113,113,0.08); }
+    .callout-caution { border-color: var(--red); background: var(--caution-bg); }
     .callout-caution .callout-title { color: var(--red); }
     .callout-caution .callout-title::before { content: '🔴'; }
 
     /* ─── Code ─── */
-    article code { background: rgba(99,102,241,0.1); color: #c7d2fe; padding: 2px 7px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.88em; }
+    article code { background: var(--code-bg); color: var(--code-color); padding: 2px 7px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.88em; }
     article pre {
-      background: #020617; color: #e2e8f0; padding: 18px; border-radius: var(--radius);
-      overflow: auto; margin: 14px 0; border: 1px solid rgba(99,102,241,0.1);
+      background: var(--pre-bg); color: var(--text); padding: 18px; border-radius: var(--radius);
+      overflow: auto; margin: 14px 0; border: 1px solid var(--pre-border);
+      transition: background 0.35s ease;
     }
     article pre code { background: transparent; padding: 0; color: inherit; font-size: 14px; }
 
     /* ─── Tables ─── */
     article .table-scroll { overflow-x: auto; margin: 16px 0; -webkit-overflow-scrolling: touch; }
     article table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 0; }
-    article th, article td { border: 1px solid rgba(99,102,241,0.12); padding: 10px 12px; text-align: left; overflow-wrap: break-word; word-break: break-word; }
-    article th { background: rgba(99,102,241,0.08); color: var(--accent-light); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
-    article tr:nth-child(even) { background: rgba(15,23,42,0.4); }
-    article tr:hover { background: rgba(99,102,241,0.06); }
+    article th, article td { border: 1px solid var(--table-border); padding: 10px 12px; text-align: left; overflow-wrap: break-word; word-break: break-word; }
+    article th { background: var(--table-header-bg); color: var(--accent-light); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em; }
+    article tr:nth-child(even) { background: var(--table-stripe); }
+    article tr:hover { background: var(--table-hover); }
 
     /* ─── Mermaid with zoom/pan ─── */
     .mermaid-wrap {
       position: relative; margin: 20px 0;
-      background: rgba(15,23,42,0.6); border: 1px solid var(--panel-border);
+      background: var(--mermaid-bg); border: 1px solid var(--panel-border);
       border-radius: var(--radius); overflow: hidden;
+      transition: background 0.35s ease;
     }
     .mermaid-wrap .mermaid-viewport {
       overflow: hidden; cursor: grab; min-height: 450px;
@@ -351,7 +421,7 @@ export async function renderHtmlFromMarkdown(payload) {
     article img { max-width: 100%; height: auto; }
 
     /* ─── Selection ─── */
-    ::selection { background: rgba(99,102,241,0.3); color: #f1f5f9; }
+    ::selection { background: var(--selection-bg); color: var(--selection-color); }
 
     /* ─── Scrollbar ─── */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -362,10 +432,9 @@ export async function renderHtmlFromMarkdown(payload) {
     /* ─── Print ─── */
     @media print {
       body { background: #fff; color: #1e293b; }
-      .toc { display: none; }
+      .toc, .hero-actions { display: none; }
       article { box-shadow: none; border: none; background: #fff; backdrop-filter: none; padding: 0; }
       .hero-title { -webkit-text-fill-color: #1e293b; background: none; }
-      .back-btn { display: none; }
       article h2 { border-left-color: #1e293b; }
       .callout { border-color: #64748b; background: #f8fafc; }
       article pre { background: #f1f5f9; color: #1e293b; }
@@ -382,31 +451,40 @@ export async function renderHtmlFromMarkdown(payload) {
   </style>
 </head>
 <body>
+  <script>
+    // Apply saved theme immediately to prevent flash
+    const savedTheme = localStorage.getItem('abi-reader-theme');
+    if (savedTheme) document.documentElement.setAttribute('data-theme', savedTheme);
+  </script>
   <main class="page">
     <header class="hero">
       <div>
         <h1 class="hero-title">${escapeHtml(payload.title)}</h1>
         <p class="hero-sub">Сгенерировано ABI Conspector</p>
       </div>
-      <button class="back-btn" onclick="window.close()">← Закрыть</button>
+      <div class="hero-actions">
+        <button id="theme-toggle" class="hero-btn" title="Сменить тему">☀️</button>
+        <button class="hero-btn" onclick="window.close()">← Закрыть</button>
+      </div>
     </header>
     ${toc}
     <article>${rendered}</article>
   </main>
   <script type="module">
     import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: 'dark',
-      themeVariables: {
-        darkMode: true,
-        background: '#0f172a',
-        primaryColor: '#6366f1',
-        primaryTextColor: '#e2e8f0',
-        lineColor: '#475569'
-      },
-      securityLevel: 'loose'
-    });
+
+    // ─── Theme Toggle ───
+    const isLight = () => document.documentElement.getAttribute('data-theme') === 'light';
+    const themeBtn = document.getElementById('theme-toggle');
+    themeBtn.textContent = isLight() ? '🌙' : '☀️';
+
+    function getMermaidTheme() {
+      return isLight()
+        ? { theme: 'default', themeVariables: { background: '#fafaf9', primaryColor: '#4f46e5', primaryTextColor: '#1e293b', lineColor: '#94a3b8' } }
+        : { theme: 'dark', themeVariables: { darkMode: true, background: '#0f172a', primaryColor: '#6366f1', primaryTextColor: '#e2e8f0', lineColor: '#475569' } };
+    }
+
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', ...getMermaidTheme() });
 
     // Wrap each .mermaid in a zoom/pan container, then render
     document.querySelectorAll('.mermaid, pre code.language-mermaid').forEach(el => {
@@ -503,6 +581,26 @@ export async function renderHtmlFromMarkdown(payload) {
       }
     }, { threshold: 0.1 });
     fadeEls.forEach(el => fadeObserver.observe(el));
+
+    // ─── Theme toggle handler ───
+    themeBtn.addEventListener('click', async () => {
+      const newTheme = isLight() ? '' : 'light';
+      if (newTheme) {
+        document.documentElement.setAttribute('data-theme', 'light');
+        localStorage.setItem('abi-reader-theme', 'light');
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+        localStorage.removeItem('abi-reader-theme');
+      }
+      themeBtn.textContent = isLight() ? '🌙' : '☀️';
+
+      // Re-render mermaid with new theme
+      mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', ...getMermaidTheme() });
+      document.querySelectorAll('.mermaid[data-processed]').forEach(el => {
+        el.removeAttribute('data-processed');
+      });
+      try { await mermaid.run(); } catch (_) { /* ignore re-render errors */ }
+    });
   </script>
 </body>
 </html>`;

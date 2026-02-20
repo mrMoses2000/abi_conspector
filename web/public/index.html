@@ -10,6 +10,7 @@
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>" />
   <link rel="stylesheet" href="./styles.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body>
@@ -23,22 +24,22 @@
 
       <div class="welcome-features">
         <div class="feature-card">
-          <div class="feature-icon">🎙️</div>
+          <div class="feature-icon"><i data-lucide="mic"></i></div>
           <h3>Транскрипция</h3>
           <p>Загрузите аудиозапись лекции — система автоматически распознает речь с помощью Groq и AssemblyAI</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon">🤖</div>
+          <div class="feature-icon"><i data-lucide="brain"></i></div>
           <h3>AI-обработка</h3>
           <p>Google Gemini структурирует текст в полноценный конспект с тезисами, терминами и mind-map</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon">📓</div>
+          <div class="feature-icon"><i data-lucide="notebook-pen"></i></div>
           <h3>Notion</h3>
           <p>Готовый конспект автоматически публикуется в Notion с правильным форматированием</p>
         </div>
         <div class="feature-card">
-          <div class="feature-icon">📚</div>
+          <div class="feature-icon"><i data-lucide="library"></i></div>
           <h3>Библиотека</h3>
           <p>Все конспекты по предметам собраны в красивой HTML-библиотеке с навигацией</p>
         </div>
@@ -110,9 +111,12 @@
           <p id="user-line" class="muted"></p>
         </div>
         <div class="actions">
-          <button id="library-btn" class="btn accent" type="button">📚 Конспекты</button>
-          <button id="refresh-btn" class="btn secondary" type="button">⟳ Обновить</button>
-          <button id="logout-btn" class="btn ghost" type="button">Выйти</button>
+          <button id="library-btn" class="btn accent" type="button"><i data-lucide="library"
+              style="width:16px;height:16px"></i> Конспекты</button>
+          <button id="refresh-btn" class="btn secondary" type="button"><i data-lucide="refresh-cw"
+              style="width:16px;height:16px"></i> Обновить</button>
+          <button id="logout-btn" class="btn ghost" type="button"><i data-lucide="log-out"
+              style="width:16px;height:16px"></i> Выйти</button>
         </div>
       </div>
 
@@ -139,13 +143,14 @@
               <option value="codex-high">Codex CLI (high)</option>
             </select>
           </label>
-          <button id="create-subject-btn" class="btn secondary" type="button">+ Новый предмет</button>
+          <button id="create-subject-btn" class="btn secondary" type="button"><i data-lucide="plus"
+              style="width:16px;height:16px"></i> Новый предмет</button>
         </div>
 
         <!-- Upload dropzone -->
         <div id="upload-zone" class="upload-zone hidden">
           <div class="upload-zone-content">
-            <div class="upload-icon">🎙️</div>
+            <div class="upload-icon"><i data-lucide="mic" style="width:48px;height:48px"></i></div>
             <p class="upload-text">Перетащите аудио файл сюда</p>
             <p class="upload-hint">или</p>
             <label class="btn secondary upload-pick-btn">
@@ -246,6 +251,7 @@
   </main>
 
   <script src="./app.js"></script>
+  <script>lucide.createIcons();</script>
 </body>
 
 </html>
